@@ -1,0 +1,11 @@
+{application, pynif,
+ [
+  {description, "Call Erlang NIFs from Python"},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
