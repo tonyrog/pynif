@@ -447,6 +447,27 @@ void* enif_realloc(void* ptr, size_t size)
 }
 
 //
+// ADMIN
+//
+void* enif_priv_data(ErlNifEnv* env)
+{
+    return env->priv_data;
+}
+
+// I/O
+int enif_fprintf(FILE* filep, const char *format, ...)
+{
+    va_list ap;
+    int r;
+    
+    va_start(ap, format);
+    r = vfprintf(filep, format, ap);
+    va_end(ap);
+    return r;
+}
+
+
+//
 // Modules
 // if STATIC_ERLANG_NIF was set at build time then the init function
 // is call <modname>_nif_init(ERL_NIF_INIT_ARGS)
@@ -510,6 +531,14 @@ CAT2(init,PYNIFNAME)(void)
 	methods[i].ml_meth = pynif_func[i];
 	methods[i].ml_flags =  METH_VARARGS;
 	methods[i].ml_doc = "PyNif function";
+    }
+
+    memset(&nif_env, 0, sizeof(ErlNifEnv));
+
+    if (nif_entry->load != NULL) {
+	ERL_NIF_TERM load_info = enif_make_int(&nif_env, 0);
+	int r = nif_entry->load(&nif_env, &nif_env.priv_data, load_info);
+	if (r < 0) return;
     }
     Py_InitModule(STRINGIFY(PYNIFNAME), methods);
 }

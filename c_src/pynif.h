@@ -9,6 +9,7 @@ typedef PyObject* ERL_NIF_TERM;
 typedef struct enif_env_t
 {
     ERL_NIF_TERM self;
+    void* priv_data;
 } ErlNifEnv;
 
 typedef enum
