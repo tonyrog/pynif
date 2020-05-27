@@ -4,13 +4,25 @@
 #ifndef __PYNIF_H__
 #define __PYNIF_H__
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include <pythread.h>
+
 typedef PyObject* ERL_NIF_TERM;
+typedef struct _erl_nif_mutex ErlNifMutex;
+typedef PyTypeObject ErlNifResourceType;
 
 typedef struct enif_env_t
 {
     ERL_NIF_TERM self;
     void* priv_data;
 } ErlNifEnv;
+
+typedef enum
+{
+    ERL_NIF_RT_CREATE = 1,
+    ERL_NIF_RT_TAKEOVER = 2
+} ErlNifResourceFlags;
 
 typedef enum
 {

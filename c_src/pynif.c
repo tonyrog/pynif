@@ -1,11 +1,10 @@
 //
 //  pynif: enif wrapper to allow python to call erlang nifs
 //
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-#include <stdarg.h>
 
 #include "pynif.h"
+
+#include <stdarg.h>
 
 #ifndef PYNIFNAME
 #error "must define PYNIFNAME to module name"
@@ -447,12 +446,134 @@ void* enif_realloc(void* ptr, size_t size)
 }
 
 //
+// THREAD/LOCK
+//
+ErlNifMutex* enif_mutex_create(char *name)
+{
+    UNUSED(name);
+    return (ErlNifMutex*) PyThread_allocate_lock();
+}
+
+void enif_mutex_destroy(ErlNifMutex *mtx)
+{
+    PyThread_free_lock((PyThread_type_lock)mtx);
+}
+
+int enif_mutex_trylock(ErlNifMutex *mtx)
+{
+    return PyThread_acquire_lock((PyThread_type_lock)mtx, NOWAIT_LOCK);
+}
+
+void enif_mutex_lock(ErlNifMutex *mtx)
+{
+    (void) PyThread_acquire_lock((PyThread_type_lock)mtx, WAIT_LOCK);
+}
+
+void enif_mutex_unlock(ErlNifMutex *mtx)
+{
+    PyThread_release_lock((PyThread_type_lock)mtx);    
+}
+
+//
 // ADMIN
 //
 void* enif_priv_data(ErlNifEnv* env)
 {
     return env->priv_data;
 }
+
+
+typedef struct _resource_t
+{
+    PyObject_VAR_HEAD
+    ErlNifEnv* env;
+    uint8_t data[0];
+} Resource;
+
+// Erlang (void*) => PyVarObject (Resource)
+#define OBJ_TO_RESOURCE(obj) ((Resource*)(((uint8_t*)obj) - sizeof(Resource)))
+// PyVarObject (Resource*) to Erlang (void*)
+#define RESOURCE_TO_OBJ(ptr) ((void*) &((Resource*)(ptr))->data[0])
+
+// FIXME: not really working
+typedef struct _resource_type_t {
+    PyTypeObject tp;                  // : PyVarObject
+    void (*dtor)(ErlNifEnv*,void *);  // keeper of dtor for wrapper
+} ResourceType;
+
+static void resource_dealloc(PyObject* obj)
+{
+    Resource* ptr = (Resource*) obj;
+    ResourceType* rtp = (ResourceType*) ptr->ob_type;
+    (*rtp->dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
+}
+
+ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
+					    const char* module_str,
+					    const char* name_str,
+					    void (*dtor)(ErlNifEnv*,void *),
+					    ErlNifResourceFlags flags,
+					    ErlNifResourceFlags* tried)
+{
+    ResourceType* rtp = enif_alloc(sizeof(ResourceType));
+
+    memset(rtp, 0, sizeof(ResourceType));
+
+    rtp->tp.ob_size = 1;  // for dtor
+    rtp->tp.tp_name = name_str;
+    rtp->tp.tp_basicsize = sizeof(Resource);
+    rtp->tp.tp_itemsize  = 0;
+    rtp->tp.tp_flags = Py_TPFLAGS_DEFAULT;
+    rtp->tp.tp_new = PyType_GenericNew,
+    rtp->dtor = dtor;
+    // methods
+    rtp->tp.tp_dealloc = resource_dealloc;
+
+    if (flags & ERL_NIF_RT_CREATE)
+	*tried = ERL_NIF_RT_CREATE;
+    return (ErlNifResourceType*)rtp;
+}
+
+void* enif_alloc_resource(ErlNifResourceType* type, size_t size)
+{
+    Resource* ptr = PyObject_NewVar(Resource, type, size);
+    Py_INCREF((PyObject*) ptr);    
+    return RESOURCE_TO_OBJ(ptr);
+}
+
+void enif_release_resource(void* obj)
+{
+    Resource* ptr = OBJ_TO_RESOURCE(obj);
+    Py_DECREF((PyObject*) ptr);
+}
+
+void enif_keep_resource(void* obj)
+{
+    Resource* ptr = OBJ_TO_RESOURCE(obj);
+    Py_INCREF((PyObject*) ptr);
+}
+
+ERL_NIF_TERM enif_make_resource(ErlNifEnv* env, void* obj)
+{
+    return (PyObject*)OBJ_TO_RESOURCE(obj);
+}
+    
+int enif_get_resource(ErlNifEnv* env, ERL_NIF_TERM term,
+		      ErlNifResourceType* type, void** objp)
+{
+    if (term && (term->ob_type == type)) {
+	*objp = RESOURCE_TO_OBJ(term);
+	return 1;
+    }
+    return 0;
+}
+
+size_t enif_sizeof_resource(void* obj)
+{
+    Resource* ptr = OBJ_TO_RESOURCE(obj);
+    return Py_SIZE(ptr);
+}
+
 
 // I/O
 int enif_fprintf(FILE* filep, const char *format, ...)
@@ -475,15 +596,23 @@ int enif_fprintf(FILE* filep, const char *format, ...)
 static ErlNifEntry* nif_entry = NULL;
 static ErlNifEnv nif_env;
 
+static PyObject* pynif_apply(int fi, PyObject* self, PyObject* args)
+{
+    PyObject** argv = ((PyTupleObject *)(args))->ob_item;
+    int argc = PyTuple_Size(args);
+    nif_env.self = self;
+    return (*nif_entry->funcs[(fi)].fptr)(&nif_env, argc, argv);
+}
+
 #define PYNIF_BODY(fi, me, args)				\
     PyObject** argv = ((PyTupleObject *)(args))->ob_item;	\
     int argc = PyTuple_Size((args));				\
     nif_env.self = (me);					\
     return (*nif_entry->funcs[(fi)].fptr)(&nif_env, argc, argv)
 
-#define PYNIF_FUNC(fi)				\
-    static PyObject* pynif_##fi(PyObject* self, PyObject* args) { PYNIF_BODY((fi), self, args); }
-    
+#define PYNIF_FUNC(fi) static PyObject* pynif_##fi(PyObject* self, PyObject* args) { return pynif_apply((fi), self, args); }
+
+// Must be a better way!
 PYNIF_FUNC(0)
 PYNIF_FUNC(1)
 PYNIF_FUNC(2)

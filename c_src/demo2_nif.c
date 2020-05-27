@@ -45,7 +45,9 @@ ErlNifFunc demo2_funcs[] = {
 static ERL_NIF_TERM next(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
     if (argc == 1) {
-	return enif_make_tuple2(env, ATOM(ok), enif_make_long(env, 1000));
+	demo2_state_t* state = enif_priv_data(env);
+	return enif_make_tuple2(env, ATOM(ok),
+				enif_make_long(env, state->value+1000));
     }
     else if (argc == 2) {
 	return enif_make_tuple4(env, ATOM(true),
