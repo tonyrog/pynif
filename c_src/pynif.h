@@ -10,13 +10,23 @@
 
 typedef PyObject* ERL_NIF_TERM;
 typedef struct _erl_nif_mutex ErlNifMutex;
+typedef struct _erl_nif_rwlock ErlNifRWLock;
 typedef PyTypeObject ErlNifResourceType;
+typedef int ErlNifTSDKey;
 
 typedef struct enif_env_t
 {
     ERL_NIF_TERM self;
     void* priv_data;
+    ERL_NIF_TERM module;    // PyModule object
+    PyObject* atoms;        // map: string => string
+    size_t atom_table_size; // number of allocated items in atom_table
+    PyObject** atom_table;  // array: atom_index => bool|string_object
+    size_t atom_index;
 } ErlNifEnv;
+
+#define INITIAL_ATOM_TABLE_SIZE 1024
+#define EXPAND_ATOM_TABLE_SIZE  512
 
 typedef enum
 {
@@ -28,7 +38,17 @@ typedef enum
 {
     ERL_NIF_LATIN1 = 1
 } ErlNifCharEncoding;
-			     
+
+typedef struct
+{
+    size_t size;
+    unsigned char* data;
+    
+    void* ref_bin;
+    /* for future additions to be ABI compatible (same struct size) */
+    void* __spare__[2];
+} ErlNifBinary;
+
 typedef struct enif_func_t
 {
     const char* name;

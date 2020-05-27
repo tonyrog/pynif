@@ -54,3 +54,17 @@ that works with your project.
 Have a look in c_src/Makefile for examples.
 
 
+# Example interface matrix.so from github.com/tonyrog/matrix
+
+Assume the matrix code was cloned in $HOME/erlang/matrix
+
+    cd pynif/c_src
+    gcc -fPIC -I/usr/include/python2.7 -shared -o matrix.so -DPYNIFNAME=matrix -DPYNIFFILE=$HOME/erlang/matrix/priv/matrix_drv.so pynif.c
+
+Now try to create a matrix
+
+    python
+    > import sys; sys.setdlopenflags(258); import matrix
+    > M = matrix.create_(10, 10, 5, True, [])
+    > matrix.info(M, matrix.rows)
+    10
