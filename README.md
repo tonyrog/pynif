@@ -1,8 +1,8 @@
 # PyNIF - Call Erlang NIFs from Python
 
 Work in progress.
-A wrapper to be able to nativly call erlang NIFS directly from
-Python using a library that implenent Erlangs nif_api layer.
+A wrapper to be able to natively call erlang NIFS directly from
+Python using a library that implement Erlangs nif_api layer.
 
 Reuse your code!
 
@@ -51,6 +51,6 @@ the name of the NIF file name to use.
 You can try various ways with library paths and names to find a fit
 that works with your project.
 
-Have a loook in c_src/Makefile for examples.
+Have a look in c_src/Makefile for examples.
 
 
