@@ -4,7 +4,12 @@
 
 #include "pynif.h"
 
+#ifndef WIN32
 #include <stdarg.h>
+#include <dlfcn.h>
+#else
+#include <windows.h>
+#endif
 
 #ifndef PYNIFNAME
 #error "must define PYNIFNAME to module name"
@@ -474,6 +479,18 @@ void enif_mutex_unlock(ErlNifMutex *mtx)
     PyThread_release_lock((PyThread_type_lock)mtx);    
 }
 
+// I/O
+int enif_fprintf(FILE* filep, const char *format, ...)
+{
+    va_list ap;
+    int r;
+    
+    va_start(ap, format);
+    r = vfprintf(filep, format, ap);
+    va_end(ap);
+    return r;
+}
+
 //
 // ADMIN
 //
@@ -522,12 +539,17 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
     rtp->tp.ob_size = 1;  // for dtor
     rtp->tp.tp_name = name_str;
     rtp->tp.tp_basicsize = sizeof(Resource);
-    rtp->tp.tp_itemsize  = 0;
+    rtp->tp.tp_itemsize  = 1;  // since it is a byte array (any struture)!
     rtp->tp.tp_flags = Py_TPFLAGS_DEFAULT;
-    rtp->tp.tp_new = PyType_GenericNew,
-    rtp->dtor = dtor;
-    // methods
+    rtp->tp.tp_new = PyType_GenericNew;
     rtp->tp.tp_dealloc = resource_dealloc;
+    // store dtor in type
+    rtp->dtor = dtor;
+
+    if (PyType_Ready((PyTypeObject*) rtp) < 0) {
+	enif_fprintf(stderr, "PyType_Ready failed\n");
+    }
+    // enif_fprintf(stderr, "ob_size = %ld\r\n", rtp->tp.ob_size);
 
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
@@ -575,19 +597,6 @@ size_t enif_sizeof_resource(void* obj)
 }
 
 
-// I/O
-int enif_fprintf(FILE* filep, const char *format, ...)
-{
-    va_list ap;
-    int r;
-    
-    va_start(ap, format);
-    r = vfprintf(filep, format, ap);
-    va_end(ap);
-    return r;
-}
-
-
 //
 // Modules
 // if STATIC_ERLANG_NIF was set at build time then the init function
@@ -596,7 +605,7 @@ int enif_fprintf(FILE* filep, const char *format, ...)
 static ErlNifEntry* nif_entry = NULL;
 static ErlNifEnv nif_env;
 
-static PyObject* pynif_apply(int fi, PyObject* self, PyObject* args)
+static PyObject* pynif_call(PyObject* self, PyObject* args, int fi)
 {
     PyObject** argv = ((PyTupleObject *)(args))->ob_item;
     int argc = PyTuple_Size(args);
@@ -604,13 +613,7 @@ static PyObject* pynif_apply(int fi, PyObject* self, PyObject* args)
     return (*nif_entry->funcs[(fi)].fptr)(&nif_env, argc, argv);
 }
 
-#define PYNIF_BODY(fi, me, args)				\
-    PyObject** argv = ((PyTupleObject *)(args))->ob_item;	\
-    int argc = PyTuple_Size((args));				\
-    nif_env.self = (me);					\
-    return (*nif_entry->funcs[(fi)].fptr)(&nif_env, argc, argv)
-
-#define PYNIF_FUNC(fi) static PyObject* pynif_##fi(PyObject* self, PyObject* args) { return pynif_apply((fi), self, args); }
+#define PYNIF_FUNC(fi) static PyObject* pynif_##fi(PyObject* self, PyObject* args) { return pynif_call(self, args, (fi)); }
 
 // Must be a better way!
 PYNIF_FUNC(0)
@@ -638,7 +641,24 @@ static PyCFunction pynif_func[MAX_PYNIF_FUNCS] =
     pynif_12, pynif_13, pynif_14, pynif_15,
 };
 
-extern ErlNifEntry* nif_init(void);
+
+#ifdef WIN32
+#define RTLD_LAZY 0
+typedef HMODULE dl_handle_t;
+void * dlsym(HMODULE Lib, const char *func) {
+    return (void *) GetProcAddress(Lib, func);
+}
+HMODULE dlopen(const CHAR *DLL, int unused) {
+  UNUSED(unused);
+  return LoadLibrary(DLL);
+}
+#else
+typedef void * dl_handle_t;
+#endif
+
+// #ifndef PYNIFFILE
+// extern ErlNifEntry* nif_init(void);
+// #endif
 
 PyMODINIT_FUNC
 CAT2(init,PYNIFNAME)(void)
@@ -646,7 +666,27 @@ CAT2(init,PYNIFNAME)(void)
     // now convert all funcs into PyMethodDef array
     PyMethodDef* methods;
     int i;
+#ifdef PYNIFFILE
+    ErlNifEntry* (*nif_init)(void);
+#else
+    extern ErlNifEntry* nif_init(void);
+#endif
 
+#ifdef PYNIFFILE
+    {
+	dl_handle_t handle;
+	char* file = STRINGIFY(PYNIFFILE);
+	// load dynamic library
+	if ((handle = dlopen(file,RTLD_LAZY)) == NULL) {
+	    fprintf(stderr, "Failed open %s dynamic library\r\n", file);
+	    // FIXME: set error
+	    return;
+	}
+	// first find the proc addr function
+	nif_init = (ErlNifEntry* (*)(void)) dlsym(handle,"nif_init");
+    }
+#endif
+    
     nif_entry = nif_init();
     // FIXME: call "load" function if defined!
 
