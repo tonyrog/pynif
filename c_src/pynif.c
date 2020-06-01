@@ -6,6 +6,7 @@
 
 #ifndef WIN32
 #include <stdarg.h>
+#include <stdint.h>
 #include <dlfcn.h>
 #else
 #include <windows.h>
@@ -25,6 +26,8 @@
 #define MAX_PYNIF_FUNCS 256
 
 #define UNUSED(var) (void)var
+#define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+// #define DBG(fmt, ...)
 //
 // INTEGER
 //
@@ -34,6 +37,10 @@ int enif_get_int(ErlNifEnv* env, ERL_NIF_TERM term, int* ip)
     UNUSED(env);
     if (PyInt_Check(term)) {
 	*ip = PyInt_AsLong(term);
+	return 1;
+    }
+    else if (PyLong_Check(term)) {
+	*ip = PyLong_AsLong(term);
 	return 1;
     }
     return 0;
@@ -52,6 +59,10 @@ int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 	*ip = PyInt_AsLong(term);
 	return 1;
     }
+    else if (PyLong_Check(term)) {
+	*ip = PyLong_AsLong(term);
+	return 1;
+    }    
     return 0;
 }
 
@@ -59,6 +70,28 @@ ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
 {
     UNUSED(env);
     return PyInt_FromLong(i);
+}
+
+
+int enif_get_ulong(ErlNifEnv* env, ERL_NIF_TERM term, unsigned long* up)
+{
+    UNUSED(env);
+    if (PyInt_Check(term)) {
+	*up = PyInt_AsUnsignedLongMask(term);
+	return 1;
+    }
+    else if (PyLong_Check(term)) {
+	*up = PyLong_AsUnsignedLong(term);
+	return 1;
+    }    
+    return 0;
+}
+
+// FIXME: generate PyLong if needed?
+ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long i)
+{
+    UNUSED(env);
+    return PyInt_FromLong((long)i);
 }
 
 int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
@@ -70,9 +103,16 @@ int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
 	*ip = val;
 	return 1;
     }
+    else if (PyLong_Check(term)) {
+	long val = PyLong_AsLong(term);
+	if (val < 0) return 0;
+	*ip = val;
+	return 1;
+    }
     return 0;
 }
 
+// FIXME: generate PyLong if needed?
 ERL_NIF_TERM enif_make_uint(ErlNifEnv* env, unsigned i)
 {
     UNUSED(env);
@@ -286,7 +326,7 @@ ERL_NIF_TERM enif_make_string_len(ErlNifEnv* env, const char* string, size_t len
 ERL_NIF_TERM enif_make_badarg(ErlNifEnv* env)
 {
     PyErr_SetString(PyExc_TypeError, "badarg");
-    return NULL;
+    return NULL; // fixme?
 }
 
 //
@@ -530,18 +570,159 @@ ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM hd, ERL_NIF_TERM t
 //
 // MAP
 //
+
+int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
+			ErlNifBinary* bin)
+{
+    if (PyByteArray_Check(bin_term)) {
+	bin->size = PyByteArray_Size(bin_term);
+	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
+	bin->allocated = 0;
+	bin->ref_bin = bin_term;
+	return 1;
+    }
+    return 0;
+}
+
+ErlNifEnv* enif_alloc_env(void)
+{
+    ErlNifEnv* env = (ErlNifEnv*) PyMem_Malloc(sizeof(ErlNifEnv));
+    memset(env, 0, sizeof(ErlNifEnv));
+    return env;
+}
+
+void enif_clear_env(ErlNifEnv* env)
+{
+    memset(env, 0, sizeof(ErlNifEnv));
+}
+
+
+unsigned char* enif_make_new_binary(ErlNifEnv* env,size_t size,
+				    ERL_NIF_TERM* termp)
+{
+    PyObject* obj = PyByteArray_FromStringAndSize("\0", 1);
+    if (PyByteArray_Resize(obj, size) < 0)
+	return NULL;
+    *termp = obj;
+    return (unsigned char*) PyByteArray_AS_STRING(obj);
+}
+
+int enif_compare_monitors(const ErlNifMonitor* a, const ErlNifMonitor* b)
+{
+    return 0;
+}
+
+int enif_monitor_process(ErlNifEnv* env, void* obj, const ErlNifPid* pid,
+			 ErlNifMonitor *monitor)
+{
+    return 0;
+}
+
+
+ERL_NIF_TERM enif_raise_exception(ErlNifEnv *env, ERL_NIF_TERM reason)
+{
+    UNUSED(env);
+    UNUSED(reason);
+    PyErr_SetString(PyExc_TypeError, "exception");
+    return NULL;    // fixme?
+}
+
+// FIXME: put msg into a message box under the module object (key on thread?)
+int enif_send(ErlNifEnv* env, const ErlNifPid* to_pid, ErlNifEnv* msg_env, ERL_NIF_TERM msg)
+{
+    return 0;
+}
+
+ErlNifPid* enif_self(ErlNifEnv* caller_env, ErlNifPid* pid)
+{
+    UNUSED(caller_env);
+    pid->thread_ident = PyThread_get_thread_ident();
+    return pid;
+}
+
+
+//
+// MAP
+//
+
+int enif_is_map(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    UNUSED(env);
+    return PyDict_Check(term);
+}
+
+int enif_make_map_from_arrays(ErlNifEnv *env, ERL_NIF_TERM keys[], ERL_NIF_TERM values[], size_t cnt, ERL_NIF_TERM *map_out)
+{
+    UNUSED(env);
+    PyObject* dict;
+    int i;
+
+    if ((dict = PyDict_New()) == NULL)
+	return 0;
+    for (i = 0; i < (int)cnt; i++) {
+	if (PyDict_SetItem(dict, keys[i], values[i]) < 0)
+	    return 0;
+    }
+    *map_out = dict;
+    return 1;
+}
+
+//
+// MEMORY
+//
+void* enif_alloc(size_t size)
+{
+    return PyMem_Malloc(size);
+}
+
+void enif_free(void* ptr)
+{
+    PyMem_Free(ptr);
+}
+
+void* enif_realloc(void* ptr, size_t size)
+{
+    return PyMem_Realloc(ptr, size);
+}
+
+int enif_alloc_binary(size_t size, ErlNifBinary* bin)
+{
+    if ((bin->data = PyMem_Malloc(size)) != NULL) {
+	bin->size = size;
+	bin->allocated = 1;
+	bin->ref_bin = NULL;
+	return 1;
+    }
+    bin->allocated = 0;
+    return 0;
+}
+
+void enif_release_binary(ErlNifBinary* bin)
+{
+    if (bin->allocated) {
+	if (bin->data != NULL)
+	    PyMem_Free(bin->data);
+	bin->data = NULL;
+	bin->size = 0;
+	bin->allocated = 0;
+	bin->ref_bin = NULL;	
+    }
+}
+
 int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 				  ErlNifBinary* bin)
 {
     if (PyByteArray_Check(term)) {
 	bin->size = PyByteArray_Size(term);
 	bin->data = (unsigned char*) PyByteArray_AsString(term);
+	bin->allocated = 0;
 	bin->ref_bin = term;
 	return 1;	
     }
     else if (PyString_Check(term)) {
 	bin->size = PyString_Size(term);
 	bin->data = (unsigned char*) PyString_AsString(term);
+	bin->allocated = 0;
 	bin->ref_bin = term;
 	return 1;	
     }
@@ -565,52 +746,27 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 		    return 0;
 	    }
 	}
-	bin->size = length;
-	bin->data = bytes;
-	bin->ref_bin = term;
+	enif_alloc_binary(length, bin);
+	memcpy(bin->data, bytes, length);
 	return 1;
     }
     return 0;    
 }
 
-int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
-			ErlNifBinary* bin)
-{
-    if (PyByteArray_Check(bin_term)) {
-	bin->size = PyByteArray_Size(bin_term);
-	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
-	bin->ref_bin = bin_term;
-	return 1;
-    }
-    return 0;
-}
-
-//
-// MAP
-//
-
-int enif_is_map(ErlNifEnv* env, ERL_NIF_TERM term)
+ERL_NIF_TERM enif_make_binary(ErlNifEnv* env, ErlNifBinary* bin)
 {
     UNUSED(env);
-    return PyDict_Check(term);
-}
-
-//
-// MEMORY
-//
-void* enif_alloc(size_t size)
-{
-    return PyMem_Malloc(size);
-}
-
-void enif_free(void* ptr)
-{
-    PyMem_Free(ptr);
-}
-
-void* enif_realloc(void* ptr, size_t size)
-{
-    return PyMem_Realloc(ptr, size);
+    if (bin->allocated) {
+	PyObject* obj = PyByteArray_FromStringAndSize((const char*)bin->data, bin->size);
+	bin->allocated = 0;
+	PyMem_Free(bin->data);
+	return obj;
+    }
+    else if ((bin->ref_bin != NULL) && PyByteArray_Check(bin->ref_bin))
+	return bin->ref_bin;  // RefCount?
+    else {
+	return PyByteArray_FromStringAndSize((const char*)bin->data, bin->size);
+    }
 }
 
 //
@@ -742,22 +898,23 @@ typedef struct _resource_t
 // FIXME: not really working
 typedef struct _resource_type_t {
     PyTypeObject tp;                  // : PyVarObject
-    void (*dtor)(ErlNifEnv*,void *);  // keeper of dtor for wrapper
+    ErlNifResourceTypeInit ini;
 } ResourceType;
 
 static void resource_dealloc(PyObject* obj)
 {
     Resource* ptr = (Resource*) obj;
     ResourceType* rtp = (ResourceType*) ptr->ob_type;
-    (*rtp->dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
+    (*rtp->ini.dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
 }
 
-ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
-					    const char* module_str,
-					    const char* name_str,
-					    void (*dtor)(ErlNifEnv*,void *),
-					    ErlNifResourceFlags flags,
-					    ErlNifResourceFlags* tried)
+
+ErlNifResourceType* enif_open_resource_type_x(
+    ErlNifEnv* env,
+    const char* name_str,
+    const ErlNifResourceTypeInit* init,
+    ErlNifResourceFlags flags,
+    ErlNifResourceFlags* tried)
 {
     ResourceType* rtp = enif_alloc(sizeof(ResourceType));
 
@@ -770,8 +927,8 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
     rtp->tp.tp_flags = Py_TPFLAGS_DEFAULT;
     rtp->tp.tp_new = PyType_GenericNew;
     rtp->tp.tp_dealloc = resource_dealloc;
-    // store dtor in type
-    rtp->dtor = dtor;
+    // store callbacks
+    rtp->ini = *init;
 
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
 	enif_fprintf(stderr, "PyType_Ready failed\n");
@@ -780,7 +937,24 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
 
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
-    return (ErlNifResourceType*)rtp;
+    return (ErlNifResourceType*)rtp;    
+}
+
+
+ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
+					    const char* module_str,
+					    const char* name_str,
+					    void (*dtor)(ErlNifEnv*,void *),
+					    ErlNifResourceFlags flags,
+					    ErlNifResourceFlags* tried)
+{
+    ResourceType* rtp = enif_alloc(sizeof(ResourceType));
+    ErlNifResourceTypeInit init;
+    memset(rtp, 0, sizeof(ResourceType));
+    memset(&init, 0, sizeof(ErlNifResourceTypeInit));
+    init.dtor = dtor;
+    return enif_open_resource_type_x(env, name_str, &init,
+				     flags, tried);
 }
 
 void* enif_alloc_resource(ErlNifResourceType* type, size_t size)
@@ -823,6 +997,674 @@ size_t enif_sizeof_resource(void* obj)
     return Py_SIZE(ptr);
 }
 
+static char* format_ext_tag(ErlExtTag tag)
+{
+    switch(tag) {
+    case MAGIC: return "MAGIC";
+    case SMALL_ATOM: return "SMALL_ATOM";
+    case ATOM: return "ATOM";
+    case BINARY: return "BINARY";
+    case SMALL_INTEGER: return "SMALL_INTEGER";
+    case INTEGER: return "INTEGER";
+    case SMALL_BIG: return "SMALL_BIG";
+    case LARGE_BIG: return "LARGE_BIG";
+    case FLOAT: return "FLOAT";
+    case NEW_FLOAT: return "NEW_FLOAT";
+    case REFERENCE: return "REFERENCE";
+    case NEW_REFERENCE: return "NEW_REFERENCE";
+    case NEWER_REFERENCE: return "NEWER_REFERENCE";
+    case STRING: return "STRING";
+    case LIST: return "LIST";
+    case SMALL_TUPLE: return "SMALL_TUPLE";
+    case LARGE_TUPLE: return "LARGE_TUPLE";
+    case NIL: return "NIL";
+    case MAP: return "MAP";
+    default: return "UNSUPPORTED";
+    }
+}
+
+static inline uint8_t get_uint8(unsigned char* ptr)
+{
+    uint8_t v = (ptr[0]);
+    return v;
+}
+
+static inline uint16_t get_uint16(unsigned char* ptr)
+{
+    uint16_t v = ((ptr[0]<<8)|ptr[1]);
+    return v;
+}
+
+static inline uint32_t get_uint32(unsigned char* ptr)
+{
+    uint32_t v = ((ptr[0]<<24)|(ptr[1]<<16)|(ptr[2]<<8)|ptr[3]);
+    return v;
+}
+
+static inline int32_t get_int32(unsigned char* ptr)
+{
+    uint32_t v = ((ptr[0]<<24)|(ptr[1]<<16)|(ptr[2]<<8)|ptr[3]);
+    return (int32_t) v;
+}
+
+static inline void put_uint8(unsigned char* ptr, uint8_t v)
+{
+    ptr[0] = v;
+}
+
+static inline void put_uint16(unsigned char* ptr, uint16_t v)
+{
+    ptr[0] = (v >> 8);
+    ptr[1] = v;
+}
+
+static inline void put_uint32(unsigned char* ptr, uint32_t v)
+{
+    ptr[0] = (v >> 24);
+    ptr[1] = (v >> 16);
+    ptr[2] = (v >> 8);
+    ptr[3] = v;
+}
+
+static inline void put_int32(unsigned char* ptr, int32_t v)
+{
+    put_uint32(ptr, (uint32_t) v);
+}
+
+// at least one byte (that is >= 1)
+static ssize_t bytesize_of_ulong(unsigned long v)
+{
+    ssize_t size = 1;
+    v >>= 8;
+    while(v) {
+	size++;
+	v >>= 8;
+    }
+    return size;
+}
+
+// put little endian ulong (at least one byte!)
+static size_t encode_ulong(unsigned char* ptr, unsigned long v)
+{
+    size_t size = 1;
+    *ptr++ = v;
+    v >>= 1;
+    while(v) {
+	*ptr++ = v;
+	v >>= 1;
+	size++;
+    }
+    return size;
+}
+
+// calculate number of bytes to represent term as binary
+static ssize_t bytesize_of_term(ERL_NIF_TERM term)
+{
+    if (PyInt_Check(term)) {
+	long value = PyInt_AsLong(term);
+	if ((value >= 0) && (value <= 0xff))
+	    return 1+1;  // small_integer (uint8)
+	else if ((value >= -0x80000000) && (value <= 0x7ffffff))
+	    return 1+4;  // integer (int32)
+	else // encode as bignum
+	    return 1+1+1+4; // size,sign,byte*4
+    }
+    else if (PyLong_Check(term)) {
+	size_t nbytes = (_PyLong_NumBits(term) + 7) / 8;
+	// size,sign,byte*4
+	return 1+1+1+nbytes;
+    }    
+    else if (PyBool_Check(term)) {
+	if (term == Py_True)
+	    return 1+1+4;  // (small atom)+length+4
+	else
+	    return 1+1+5;  // (small atom)+length+5
+    }
+    else if (PyFloat_Check(term)) {
+	return 1+8;  // NEW_FLOAT
+    }
+    else if (PyString_Check(term)) {
+	ssize_t len = PyString_Size(term);
+	if (len <= 0xffff)
+	    return 1+2+len;  // STRING encode
+	else
+	    return 1+4+2*len + 1; // LIST encode (with terminating nil)!
+    }
+    else if (PyList_Check(term)) {
+	ssize_t len = PyList_Size(term);
+	ssize_t size = 1+4 + 1;  // and the terminating NIL
+	int i;
+	for (i = 0; i < (int)len; i++) {
+	    ssize_t size1;
+	    if ((size1 = bytesize_of_term(PyList_GET_ITEM(term, i))) < 0)
+		return -1;
+	    size += size1;
+	}
+	return size;
+    }    
+    else if (PyTuple_Check(term)) {
+	ssize_t len = PyTuple_Size(term);
+	size_t size;
+	int i;
+	if (len <= 0xff)
+	    size = 1+1;
+	else
+	    size = 1+4;
+	for (i = 0; i < (int)len; i++) {
+	    ssize_t size1;
+	    if ((size1 = bytesize_of_term(PyTuple_GET_ITEM(term, i))) < 0)
+		return -1;
+	    size += size1;
+	}
+	return size;
+    }
+    else if (PyDict_Check(term)) {
+	PyObject* key;
+	PyObject* value;
+	Py_ssize_t pos = 0;
+	size_t size = 1+4;  // tag + length
+	while(PyDict_Next(term, &pos, &key, &value)) {
+	    ssize_t size1;
+	    if ((size1 = bytesize_of_term(key)) < 0)
+		return -1;
+	    size += size1;
+	    if ((size1 = bytesize_of_term(value)) < 0)
+		return -1;
+	    size += size1;
+	}
+	return size;
+    }
+    return -1;
+}
+
+
+#define DSUBb(a,b,r,d) do {						\
+	uint8_t ___cr = (r);						\
+	uint8_t ___xr = (a);						\
+	uint8_t ___yr = (b)+___cr;					\
+	___cr = (___yr < ___cr);					\
+	___yr = ___xr - ___yr;						\
+	___cr += (___yr > ___xr);					\
+	d = ___yr;							\
+	r = ___cr;							\
+    } while(0)
+
+#define DSUB(a,b,r,d) do {		\
+	uint8_t ___xr = (a);	\
+	uint8_t ___yr = (b);	\
+	___yr = ___xr - ___yr;		\
+	r = (___yr > ___xr);		\
+	d = ___yr;			\
+    } while(0)
+
+// negate, two complement the bytes in src into x
+static size_t negate_bytes(unsigned char* y, size_t yl, unsigned char* r)
+{
+    size_t rl = yl;
+    unsigned char b, d;
+    if (yl == 0)
+	return 0;
+    DSUB(*y,1,b,d);
+    *r++ = ~d;
+    y++;
+    yl--;
+    while(yl--) {
+	DSUBb(*y,0,b,d);
+	*r++ = ~d;
+	y++;
+    }
+    if (b) {
+	*r++ = 0xFF;
+	return rl+1;
+    }
+    return rl;
+}
+
+static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term);
+
+static size_t decode_seq(unsigned char* ptr, size_t len,
+			 PyObject** seq, size_t seqlen)
+{
+    int i;
+    size_t blen = 0;
+    for (i = 0; i < (int)seqlen; i++) {
+	size_t ilen;
+	if ((ilen = decode_term(ptr, len, &seq[i])) == 0)
+	    return 0;
+	blen += ilen;
+	ptr += ilen;
+	len -= ilen;
+    }
+    return blen;
+}
+
+
+static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
+{
+    if (len < 1)
+	return 0;
+    DBG("decode_term: tag=%s\n", format_ext_tag(ptr[0]));
+    switch(ptr[0]) {
+    case NIL:
+	if ((*term = PyList_New(0)) == NULL)
+	    return 0;
+	return 1;
+    case SMALL_ATOM:
+	return 0; // FIXME
+    case ATOM:
+	return 0; // FIXME	
+    case BINARY: {
+	size_t blen;
+	if (len < 5) return 0;
+	blen = get_uint32(ptr+1);
+	DBG("decode_term: binary size=%ld\n", blen);
+	if ((*term = PyByteArray_FromStringAndSize((const char*)ptr+5, blen)) == NULL)
+	    return 0;
+	return 1+4+blen;
+    }
+    case SMALL_INTEGER:
+	if (len < 2) return 0;
+	if ((*term = PyInt_FromLong(get_uint8(ptr+1))) == NULL)
+	    return 0;
+	return 1+1;
+    case INTEGER:
+	if (len < 5) return 0;
+	if ((*term = PyInt_FromLong(get_int32(ptr+1))) == NULL)
+	    return 0;
+	return 1+4;
+    case SMALL_BIG: { // t,n0,s,d0,d1,...dn-1
+	size_t blen;
+	if (len < 3) return 0;
+	blen = get_uint8(ptr+1);
+	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[2]);
+	if (ptr[2]) { // sign, negate bytes
+	    unsigned char digits[blen+1];
+	    blen = negate_bytes(ptr+3, blen, digits);
+	    if ((*term = _PyLong_FromByteArray(digits, blen, 1, 1)) == NULL)
+		return 0;
+	}
+	else {
+	    if ((*term = _PyLong_FromByteArray(ptr+3, blen, 1, 0)) == NULL)
+		return 0;
+	}
+	return 1+1+1+blen;
+    }
+    case LARGE_BIG: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
+	size_t blen;
+	if (len < 6) return 0;
+	blen = get_uint32(ptr+1);
+	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[5]);
+	if (ptr[5]) { // sign, negate bytes
+	    unsigned char digits[blen+1];
+	    blen = negate_bytes(ptr, blen, digits);
+	    if ((*term = _PyLong_FromByteArray(digits, blen, 1, 1)) == NULL)
+		return 0;
+	}	
+	else {
+	    if ((*term = _PyLong_FromByteArray(ptr+6, blen, 1, 0)) == NULL)
+		return 0;
+	}
+	return 1+4+1+blen;
+    }	
+    case FLOAT: {  // t,string(31)
+	char* junk = NULL;
+	PyObject* string = PyString_FromStringAndSize((const char*)ptr+1, 31);
+	if ((*term = PyFloat_FromString(string, &junk)) == NULL)
+	    return 0;
+	return 32;
+    }
+    case NEW_FLOAT: { // t,f7,f6,f5,f4,f3,f2,f1,f0
+	double d;
+	if (len < 9) return 0;
+	d = _PyFloat_Unpack8(ptr+1, 0);
+	if ((*term = PyFloat_FromDouble(d)) == NULL)
+	    return 0;
+	return 1+8;
+    }
+    case REFERENCE:
+	return 0; // FIXME
+    case NEW_REFERENCE:
+	return 0; // FIXME
+    case NEWER_REFERENCE:
+	return 0; // FIXME
+    case STRING: {
+	size_t blen;
+	if (len < 3) return 0;
+	blen = get_uint16(ptr+1);
+	DBG("decode_term: string length=%ld\n", blen);
+	if ((*term = PyString_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
+	    return 0;
+	return 1+2+blen;
+    }
+    case LIST: {
+	size_t n;
+	if (len < 5) return 0;
+	n = get_uint32(ptr+1);
+	DBG("decode_term: list length=%ld\n", n);
+	{
+	    PyObject* list;
+	    PyObject* seq[n];
+	    size_t slen;
+	    int i;
+	    
+	    if ((slen = decode_seq(ptr+5, len-5, seq, n)) == 0)
+		return 0;
+	    if (len-5-slen < 1)
+		return 0;
+	    if (ptr[5+slen] != NIL)
+		return 0;
+	    if ((list = PyList_New(n)) == NULL)
+		return 0;
+	    for (i = 0; i < (int)n; i++)
+		PyList_SetItem(list, i, seq[i]);
+	    *term = list;	    
+	    return 5+slen+1;
+	}
+    }
+    case SMALL_TUPLE: {
+	size_t n;
+	if (len < 2) return 0;
+	n = get_uint8(ptr+1);
+	DBG("decode_term: tuple length=%ld\n", n);
+	{
+	    PyObject* tuple;
+	    PyObject* seq[n];
+	    size_t slen;
+	    int i;
+	    
+	    if ((slen = decode_seq(ptr+2, len-2, seq, n)) == 0)
+		return 0;
+	    if ((tuple = PyTuple_New(n)) == NULL)
+		return 0;
+	    for (i = 0; i < (int)n; i++)
+		PyTuple_SetItem(tuple, i, seq[i]);
+	    *term = tuple;
+	    return 2+slen;
+	}
+    }
+    case LARGE_TUPLE: {
+	size_t n;
+	if (len < 5) return 0;
+	n = get_uint32(ptr+1);
+	DBG("decode_term: tuple length=%ld\n", n);
+	{
+	    PyObject* tuple;
+	    PyObject* seq[n];
+	    size_t slen;
+	    int i;
+	    
+	    if ((slen = decode_seq(ptr+5, len-5, seq, n)) == 0)
+		return 0;
+	    if ((tuple = PyTuple_New(n)) == NULL)
+		return 0;
+	    for (i = 0; i < (int)n; i++)
+		PyTuple_SetItem(tuple, i, seq[i]);
+	    *term = tuple;
+	    return 2+slen;
+	}
+    }
+    case MAP: {
+	size_t n;
+	if (len < 5) return 0;
+	n = get_uint32(ptr+1);
+	DBG("decode_term: map length=%ld\n", n);
+	{
+	    PyObject* dict;
+	    PyObject* seq[2*n];
+	    size_t slen;
+	    int i;
+	    
+	    if ((slen = decode_seq(ptr+5, len-5, seq, 2*n)) == 0)
+		return 0;
+	    if ((dict = PyDict_New()) == NULL)
+		return 0;
+	    for (i = 0; i < (int)n; i += 2)
+		PyDict_SetItem(dict, seq[i], seq[i+1]);
+	    *term = dict;
+	    return 5+slen;
+	}
+    }
+    default:
+	return 0;
+    }
+}
+
+ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
+{
+    if (PyInt_Check(term)) {
+	long value = PyInt_AsLong(term);
+	if ((value >= 0) && (value <= 0xff)) {
+	    if (size < 2) return -1;
+	    DBG("encode_term: SMALL_INTEGER %ld\n", value);
+	    ptr[0] = SMALL_INTEGER;
+	    put_uint8(ptr+1, value);
+	    return 1+1;
+	}
+	else if ((value >= -0x80000000) && (value <= 0x7ffffff)) {
+	    if (size < 5) return -1;
+	    DBG("encode_term: INTEGER %ld\n", value);
+	    ptr[0] = INTEGER;
+	    put_int32(ptr+1, value);
+	    return 1+4;
+	}
+	else { // encode as (small) bignum
+	    if (value < 0) {
+		ssize_t len = bytesize_of_ulong(-value);
+		if (size < len+3) return -1;
+		DBG("encode_term: SMALL_BIG size=%ld\n", len);
+		ptr[0] = SMALL_BIG;
+		ptr[1] = len;
+		ptr[2] = 1;
+		encode_ulong(ptr+3, -value);
+		return 3+len;
+	    }
+	    else {
+		ssize_t len = bytesize_of_ulong(value);
+		if (size < len+3) return -1;
+		DBG("encode_term: SMALL_BIG size=%ld\n", len);
+		ptr[0] = SMALL_BIG;
+		ptr[1] = len;
+		ptr[2] = 0;
+		encode_ulong(ptr+3, value);
+		return 3+len;
+	    }
+	}
+    }
+    else if (PyLong_Check(term)) {
+	size_t nbytes = (_PyLong_NumBits(term) + 7) / 8;
+	int is_signed = _PyLong_Sign(term);
+	if (nbytes <= 255) {
+	    if (size < (ssize_t)nbytes+3) return -1;
+	    DBG("encode_term: SMALL_BIG size=%ld\n", nbytes);
+	    ptr[0] = SMALL_BIG;
+	    put_uint8(ptr+1, nbytes);
+	    ptr[2] = is_signed;
+	    _PyLong_AsByteArray((PyLongObject*)term,
+				ptr+3, nbytes, 1, is_signed);
+	    if (is_signed)
+		nbytes = negate_bytes(ptr+3, nbytes, ptr+3);
+	    return 1+1+1+nbytes;	    
+	}
+	else {
+	    if (size < (ssize_t)nbytes+6) return -1;
+	    DBG("encode_term: LARGE_BIG %ld\n", nbytes);
+	    ptr[0] = LARGE_BIG;
+	    put_uint32(ptr+1, nbytes);
+	    ptr[5] = is_signed;
+	    _PyLong_AsByteArray((PyLongObject*)term,
+				ptr+6, nbytes, 1, is_signed);
+	    if (is_signed)
+		nbytes = negate_bytes(ptr+6, nbytes, ptr+6);
+	    return 1+4+1+nbytes;
+	}
+    }
+    else if (PyBool_Check(term)) {
+	if (term == Py_True) {
+	    if (size < 6) return -1;
+	    DBG("encode_term: SMALL_ATOM %d true\n", 4);
+	    ptr[0]=SMALL_ATOM;
+	    ptr[1]=4;
+	    ptr[2]='t'; ptr[3]='r'; ptr[4]='u'; ptr[5]='e';
+	    return 1+1+4;  // (small atom)+length+4
+	}
+	else {
+	    if (size < 7) return -1;
+	    DBG("encode_term: SMALL_ATOM %d false\n", 5);
+	    ptr[0]=SMALL_ATOM;
+	    ptr[1]=5;
+	    ptr[2]='f'; ptr[3]='a'; ptr[4]='l'; ptr[5]='s'; ptr[6]='e';
+	    return 1+1+5;  // (small atom)+length+5
+	}
+    }
+    else if (PyFloat_Check(term)) {
+	if (size < 9) return -1;
+	DBG("encode_term: NEW_FLOAT %d\n", 8);
+	ptr[0] = NEW_FLOAT;
+	_PyFloat_Pack8(PyFloat_AsDouble(term), ptr+1, 0);
+	return 1+8;  // NEW_FLOAT
+    }
+    else if (PyString_Check(term)) {
+	char* str;
+	Py_ssize_t len;
+	if (PyString_AsStringAndSize(term, &str, &len) < 0)
+	    return 0;
+	if (len <= 0xffff) {
+	    if (size < 3+len) return -1;
+	    DBG("encode_term: STRING length=%ld\n", len);
+	    ptr[0] = STRING;
+	    put_uint16(ptr+1, len);
+	    memcpy(ptr+3, str, len);
+	    return 1+2+len;  // STRING encode
+	}
+	else {
+	    int n = (int)len;
+	    if (size < 5+2*len+1) return -1;
+	    DBG("encode_term: LIST length=%ld\n", len);
+	    ptr[0] = LIST;
+	    put_uint32(ptr+1, len);
+	    ptr += 5;
+	    while(n--) {
+		*ptr++ = SMALL_INTEGER;
+		*ptr++ = *str++;
+	    }
+	    *ptr = NIL;
+	    return 1+4+2*len + 1; // LIST encode (with terminating nil)!
+	}
+    }
+    else if (PyList_Check(term)) {
+	ssize_t len = PyList_Size(term);
+	ssize_t bsize = 1+4+1;  // and the terminating NIL
+	int i;
+	if (size < 6) return -1;
+	DBG("encode_term: LIST length=%ld\n", len);
+	ptr[0] = LIST;
+	put_uint32(ptr+1, len);
+	ptr += 5;
+	size -= 5;
+	for (i = 0; i < (int)len; i++) {
+	    ssize_t size1;
+	    if ((size1 = encode_term(PyList_GET_ITEM(term, i),ptr,size))<=0)
+		return -1;
+	    ptr += size1;
+	    size -= size1;
+	    bsize += size1;
+	}
+	*ptr = NIL;
+	return bsize;
+    }
+    else if (PyTuple_Check(term)) {
+	ssize_t len = PyTuple_Size(term);
+	ssize_t bsize;
+	int i;
+	if (len <= 0xff) {
+	    if (size < 2) return -1;
+	    DBG("encode_term: SMALL_TUPLE size=%ld\n", len);
+	    bsize = 1+1;
+	    ptr[0] = SMALL_TUPLE;
+	    put_uint8(ptr+1, len);
+	    ptr += 2;
+	    size -= 2;
+	}
+	else {
+	    if (size < 5) return -1;
+	    DBG("encode_term: LARGE_TUPLE size=%ld\n", len);
+	    bsize = 1+4;
+	    ptr[0] = LARGE_TUPLE;
+	    put_uint32(ptr+1, len);
+	    ptr += 5;
+	    size -= 5;
+	}
+	for (i = 0; i < (int)len; i++) {
+	    ssize_t size1;
+	    if ((size1=encode_term(PyTuple_GET_ITEM(term, i),ptr,size))<=0)
+		return -1;
+	    ptr += size1;
+	    size -= size1;
+	    bsize += size1;
+	}
+	return bsize;
+    }
+    else if (PyDict_Check(term)) {
+	PyObject* key;
+	PyObject* value;
+	ssize_t len = PyDict_Size(term);
+	Py_ssize_t pos = 0;
+	ssize_t bsize = 1+4;  // tag + length
+
+	if (size < 5) return -1;
+	DBG("encode_term: MAP #entries=%ld\n", len);
+	bsize = 1+4;
+	ptr[0] = MAP;
+	put_uint32(ptr+1, len);
+	ptr += 5;
+	size -= 5;	
+	
+	while(PyDict_Next(term, &pos, &key, &value)) {
+	    ssize_t size1;
+	    if ((size1=encode_term(key,ptr,size))<=0)
+		return -1;
+	    ptr += size1;
+	    size -= size1;
+	    bsize += size1;
+	    if ((size1=encode_term(value,ptr,size)) <= 0)
+		return -1;
+	    ptr += size1;
+	    size -= size1;
+	    bsize += size1;	    
+	}
+	return bsize;
+    }
+    return -1;
+}
+    
+int enif_term_to_binary(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin)
+{
+    ssize_t size;
+    if ((size = bytesize_of_term(term)) <= 0)
+	return 0;
+    DBG("term_to_binary: size=%ld\n", size);
+    if (!enif_alloc_binary(size+1, bin))
+	return 0;
+    if (encode_term(term, bin->data+1, size) <= 0) {
+	enif_release_binary(bin);
+	return 0;
+    }
+    bin->data[0] = MAGIC;
+    return 1;
+}
+
+size_t enif_binary_to_term(ErlNifEnv *env, const unsigned char* data,
+			   size_t sz, ERL_NIF_TERM *term, unsigned int opts)
+{
+    unsigned char* ptr = (unsigned char*) data;
+    size_t size;
+    if (ptr[0] != MAGIC)
+	return 0;
+    if ((size = decode_term(ptr+1, sz-1, term)) == 0)
+	return 0;
+    DBG("binary_to_term: size=%ld\n", size);
+    return size+1;
+}
 
 //
 // Modules

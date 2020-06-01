@@ -14,6 +14,29 @@ typedef struct _erl_nif_rwlock ErlNifRWLock;
 typedef PyTypeObject ErlNifResourceType;
 typedef int ErlNifTSDKey;
 
+typedef enum erl_ext_tag_t {
+    MAGIC = 131,
+    SMALL_ATOM = 115,
+    ATOM = 100,
+    BINARY = 109,
+    SMALL_INTEGER = 97,
+    INTEGER = 98,
+    SMALL_BIG = 110,
+    LARGE_BIG = 111,
+    FLOAT = 99,
+    NEW_FLOAT = 70,
+    REFERENCE = 101,
+    NEW_REFERENCE = 114,
+    NEWER_REFERENCE = 90,
+    STRING = 107,
+    LIST = 108,
+    SMALL_TUPLE = 104,
+    LARGE_TUPLE = 105,
+    NIL = 106,
+    MAP = 116
+} ErlExtTag;
+
+
 typedef struct enif_env_t
 {
     ERL_NIF_TERM self;
@@ -28,11 +51,45 @@ typedef struct enif_env_t
 #define INITIAL_ATOM_TABLE_SIZE 1024
 #define EXPAND_ATOM_TABLE_SIZE  512
 
+#if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
+typedef void* ErlNifEvent; /* FIXME: Use 'HANDLE' somehow without breaking existing source */
+#else
+typedef int ErlNifEvent;
+#endif
+
+/* Return bits from enif_select: */
+#define ERL_NIF_SELECT_STOP_CALLED    (1 << 0)
+#define ERL_NIF_SELECT_STOP_SCHEDULED (1 << 1)
+#define ERL_NIF_SELECT_INVALID_EVENT  (1 << 2)
+#define ERL_NIF_SELECT_FAILED         (1 << 3)
+#define ERL_NIF_SELECT_READ_CANCELLED (1 << 4)
+#define ERL_NIF_SELECT_WRITE_CANCELLED (1 << 5)
+
 typedef enum
 {
     ERL_NIF_RT_CREATE = 1,
     ERL_NIF_RT_TAKEOVER = 2
 } ErlNifResourceFlags;
+
+typedef struct
+{
+    long thread_ident;
+} ErlNifPid;
+
+typedef struct {
+    unsigned char data[sizeof(void *)*4];
+} ErlNifMonitor;
+
+typedef void ErlNifResourceDtor(ErlNifEnv*, void*);
+typedef void ErlNifResourceStop(ErlNifEnv*, void*, ErlNifEvent, int is_direct_call);
+typedef void ErlNifResourceDown(ErlNifEnv*, void*, ErlNifPid*, ErlNifMonitor*);
+
+typedef struct {
+    ErlNifResourceDtor* dtor;
+    ErlNifResourceStop* stop;  /* at ERL_NIF_SELECT_STOP event */
+    ErlNifResourceDown* down;  /* enif_monitor_process */
+} ErlNifResourceTypeInit;
+
 
 typedef enum
 {
@@ -43,11 +100,12 @@ typedef struct
 {
     size_t size;
     unsigned char* data;
-    
+    int allocated;        // 1 if data is allocated
     void* ref_bin;
     /* for future additions to be ABI compatible (same struct size) */
     void* __spare__[2];
 } ErlNifBinary;
+
 
 typedef struct enif_func_t
 {

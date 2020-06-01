@@ -11,7 +11,15 @@ LD_FLAGS = -shared
 # File names
 
 # Main target
-all: demopy.so demo2py.so demo3py.so demo3dy.so
+all: nifpy.so demopy.so demo2py.so demo3py.so demo3dy.so
+
+# nifpy.so
+nifpy.so: nif_pynif.o
+	$(CC) $(LD_FLAGS) -o $@ nif_pynif.o nif_nif.o 
+
+nif_pynif.o:	pynif.c
+	$(CC) $(CC_FLAGS) -o$@ -DPYNIFNAME=nifpy -c $<
+
 
 # demopy.so
 demopy.so: demo_pynif.o
