@@ -35,11 +35,13 @@
 int enif_get_int(ErlNifEnv* env, ERL_NIF_TERM term, int* ip)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H
     if (PyInt_Check(term)) {
 	*ip = PyInt_AsLong(term);
 	return 1;
     }
-    else if (PyLong_Check(term)) {
+#endif
+    if (PyLong_Check(term)) {
 	*ip = PyLong_AsLong(term);
 	return 1;
     }
@@ -49,17 +51,23 @@ int enif_get_int(ErlNifEnv* env, ERL_NIF_TERM term, int* ip)
 ERL_NIF_TERM enif_make_int(ErlNifEnv* env, int i)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H    
     return PyInt_FromLong(i);
+#else
+    return PyLong_FromLong(i);
+#endif
 }
 
 int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H    
     if (PyInt_Check(term)) {
 	*ip = PyInt_AsLong(term);
 	return 1;
     }
-    else if (PyLong_Check(term)) {
+#endif
+    if (PyLong_Check(term)) {
 	*ip = PyLong_AsLong(term);
 	return 1;
     }    
@@ -69,18 +77,24 @@ int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H    
     return PyInt_FromLong(i);
+#else
+    return PyLong_FromLong(i);
+#endif
 }
 
 
 int enif_get_ulong(ErlNifEnv* env, ERL_NIF_TERM term, unsigned long* up)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H
     if (PyInt_Check(term)) {
 	*up = PyInt_AsUnsignedLongMask(term);
 	return 1;
     }
-    else if (PyLong_Check(term)) {
+#endif
+    if (PyLong_Check(term)) {
 	*up = PyLong_AsUnsignedLong(term);
 	return 1;
     }    
@@ -91,19 +105,25 @@ int enif_get_ulong(ErlNifEnv* env, ERL_NIF_TERM term, unsigned long* up)
 ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long i)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H    
     return PyInt_FromLong((long)i);
+#else
+    return PyLong_FromLong((long)i);
+#endif    
 }
 
 int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H    
     if (PyInt_Check(term)) {
 	long val = PyInt_AsLong(term);
 	if (val < 0) return 0;
 	*ip = val;
 	return 1;
     }
-    else if (PyLong_Check(term)) {
+#endif
+    if (PyLong_Check(term)) {
 	long val = PyLong_AsLong(term);
 	if (val < 0) return 0;
 	*ip = val;
@@ -116,7 +136,12 @@ int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
 ERL_NIF_TERM enif_make_uint(ErlNifEnv* env, unsigned i)
 {
     UNUSED(env);
+#ifdef Py_INTOBJECT_H
+    // must check 32bit(28bit-signed) or 64bit(60bit-signed)
     return PyInt_FromLong((long)i);
+#else
+    return PyLong_FromLong((long)i);
+#endif
 }
 
 //
@@ -143,7 +168,12 @@ ERL_NIF_TERM enif_make_double(ErlNifEnv* env, double d)
 int enif_is_number(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     UNUSED(env);
-    return PyInt_Check(term) || PyFloat_Check(term);
+#ifdef Py_INTOBJECT_H    
+    return PyInt_Check(term) || PyLong_Check(term) || PyFloat_Check(term);
+#else
+    return PyLong_Check(term) || PyFloat_Check(term);
+#endif
+    
 }
 
 //
