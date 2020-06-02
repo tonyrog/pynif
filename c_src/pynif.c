@@ -577,7 +577,6 @@ int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
     if (PyByteArray_Check(bin_term)) {
 	bin->size = PyByteArray_Size(bin_term);
 	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
-	bin->allocated = 0;
 	bin->ref_bin = bin_term;
 	return 1;
     }
@@ -600,7 +599,7 @@ void enif_clear_env(ErlNifEnv* env)
 unsigned char* enif_make_new_binary(ErlNifEnv* env,size_t size,
 				    ERL_NIF_TERM* termp)
 {
-    PyObject* obj = PyByteArray_FromStringAndSize("\0", 1);
+    PyObject* obj = PyByteArray_FromStringAndSize("", 0);
     if (PyByteArray_Resize(obj, size) < 0)
 	return NULL;
     *termp = obj;
@@ -687,26 +686,99 @@ void* enif_realloc(void* ptr, size_t size)
 
 int enif_alloc_binary(size_t size, ErlNifBinary* bin)
 {
-    if ((bin->data = PyMem_Malloc(size)) != NULL) {
+    PyObject* obj = PyByteArray_FromStringAndSize("", 0);
+    if (PyByteArray_Resize(obj, size) < 0)
+	return 0;
+    else {
 	bin->size = size;
-	bin->allocated = 1;
-	bin->ref_bin = NULL;
+	bin->data = (unsigned char*) PyByteArray_AS_STRING(obj);
+	bin->ref_bin = obj;
 	return 1;
     }
-    bin->allocated = 0;
     return 0;
 }
 
 void enif_release_binary(ErlNifBinary* bin)
 {
-    if (bin->allocated) {
-	if (bin->data != NULL)
-	    PyMem_Free(bin->data);
-	bin->data = NULL;
-	bin->size = 0;
-	bin->allocated = 0;
-	bin->ref_bin = NULL;	
+    if (bin->ref_bin)
+	Py_DECREF((PyObject*) bin->ref_bin);
+    bin->data = NULL;
+    bin->size = 0;
+    bin->ref_bin = NULL;	
+}
+
+static ssize_t iolist_size(ERL_NIF_TERM term)
+{
+    if (PyByteArray_Check(term))
+	return PyByteArray_Size(term);
+    else if (PyString_Check(term))
+	return PyString_Size(term);
+    else if (PyList_Check(term)) {
+	ssize_t len = PyList_Size(term);
+	ssize_t size = 0;
+	int i;
+	for (i = 0; i < (int)len; i++) {
+	    PyObject* item = PyList_GET_ITEM(term, i);
+	    if (!PyInt_Check(item)) {
+		long v = PyInt_AsLong(item);
+		if ((v < 0) || (v > 255))
+		    return -1;
+		size++;
+	    }
+	    else {
+		ssize_t isize;
+		if ((isize = iolist_size(item)) < 0)
+		    return -1;
+		size += isize;
+	    }
+	}
+	return size;
     }
+    return -1;
+}
+
+static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
+{
+    if (PyByteArray_Check(term)) {
+	ssize_t slen = PyByteArray_Size(term);
+	char* src = PyByteArray_AsString(term);
+	if (slen > dlen) return -1;
+	memcpy(dst, src, slen);
+	return slen;
+    }
+    else if (PyString_Check(term)) {
+	ssize_t slen = PyString_Size(term);
+	char* src = PyString_AsString(term);
+	if (slen > dlen) return -1;
+	memcpy(dst, src, slen);
+	return slen;
+    }
+    else if (PyList_Check(term)) {
+	ssize_t len = PyList_Size(term);
+	ssize_t size = 0;
+	int i;
+	for (i = 0; i < (int)len; i++) {
+	    ssize_t isize;
+	    PyObject* item = PyList_GET_ITEM(term, i);
+	    if (!PyInt_Check(item)) {
+		long v = PyInt_AsLong(item);
+		if ((v < 0) || (v > 255))
+		    return -1;
+		*dst++ = v;
+		dlen--;
+		size++;
+	    }
+	    else {
+		if ((isize = iolist_copy(item, dst, dlen)) < 0)
+		    return -1;
+		dst += isize;
+		dlen -= isize;
+		size += isize;
+	    }
+	}
+	return size;
+    }
+    return -1;
 }
 
 int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
@@ -715,55 +787,38 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
     if (PyByteArray_Check(term)) {
 	bin->size = PyByteArray_Size(term);
 	bin->data = (unsigned char*) PyByteArray_AsString(term);
-	bin->allocated = 0;
 	bin->ref_bin = term;
 	return 1;	
     }
     else if (PyString_Check(term)) {
 	bin->size = PyString_Size(term);
 	bin->data = (unsigned char*) PyString_AsString(term);
-	bin->allocated = 0;
 	bin->ref_bin = term;
-	return 1;	
-    }
-    else if (PyList_Check(term)) {
-	ssize_t length = PyList_Size(term); // Fixme: recursive!
-	unsigned char bytes[length];
-	ssize_t i;
-
-	// check that all Items are in byte range
-	
-	// Fixme: recursive!
-	for (i = 0; i < length; i++) {
-	    PyObject* item = PyList_GetItem(term, i);
-	    if (!PyInt_Check(item))
-		return 0;
-	    else {
-		long v = PyInt_AsLong(item);
-		if ((v >= 0) && (v < 256))
-		    bytes[i] = v;
-		else
-		    return 0;
-	    }
-	}
-	enif_alloc_binary(length, bin);
-	memcpy(bin->data, bytes, length);
 	return 1;
     }
-    return 0;    
+    else {
+	ssize_t size;
+	
+	if ((size = iolist_size(term)) < 0)
+	    return 0;
+	if (!enif_alloc_binary(size, bin))
+	    return 0;
+	if (iolist_copy(term, bin->data, size) != size) {
+	    // fixme dealloc?
+	    return 0;
+	}
+	return 1;
+    }
+    return 0;
 }
 
 ERL_NIF_TERM enif_make_binary(ErlNifEnv* env, ErlNifBinary* bin)
 {
     UNUSED(env);
-    if (bin->allocated) {
-	PyObject* obj = PyByteArray_FromStringAndSize((const char*)bin->data, bin->size);
-	bin->allocated = 0;
-	PyMem_Free(bin->data);
-	return obj;
+    if (bin->ref_bin) {
+	Py_INCREF((PyObject*) bin->ref_bin);
+	return (PyObject*) bin->ref_bin;
     }
-    else if ((bin->ref_bin != NULL) && PyByteArray_Check(bin->ref_bin))
-	return bin->ref_bin;  // RefCount?
     else {
 	return PyByteArray_FromStringAndSize((const char*)bin->data, bin->size);
     }
@@ -905,6 +960,7 @@ static void resource_dealloc(PyObject* obj)
 {
     Resource* ptr = (Resource*) obj;
     ResourceType* rtp = (ResourceType*) ptr->ob_type;
+    DBG("dealloc resource object %s %p\r\n", rtp->tp.tp_name, obj);
     (*rtp->ini.dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
 }
 
@@ -960,7 +1016,6 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
 void* enif_alloc_resource(ErlNifResourceType* type, size_t size)
 {
     Resource* ptr = PyObject_NewVar(Resource, type, size);
-    Py_INCREF((PyObject*) ptr);    
     return RESOURCE_TO_OBJ(ptr);
 }
 
@@ -978,7 +1033,9 @@ void enif_keep_resource(void* obj)
 
 ERL_NIF_TERM enif_make_resource(ErlNifEnv* env, void* obj)
 {
-    return (PyObject*)OBJ_TO_RESOURCE(obj);
+    Resource* ptr = OBJ_TO_RESOURCE(obj);
+    Py_INCREF((PyObject*) ptr);
+    return (PyObject*) ptr;
 }
     
 int enif_get_resource(ErlNifEnv* env, ERL_NIF_TERM term,

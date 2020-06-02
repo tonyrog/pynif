@@ -100,7 +100,7 @@ typedef struct
 {
     size_t size;
     unsigned char* data;
-    int allocated;        // 1 if data is allocated
+    // int allocated;        // 1 if data is allocated
     void* ref_bin;
     /* for future additions to be ABI compatible (same struct size) */
     void* __spare__[2];
