@@ -3,9 +3,16 @@
 #
 
 # Declaration of variables
+
+# PYTHON = python2
+# PYTHON_VERSION = 2.7
+
+PYTHON = python3
+PYTHON_VERSION = 3.8
+
 CC = gcc
-CC_FLAGS = -fPIC -I/usr/include/python2.7 \
-	-Wall -Wextra -Wno-unused-parameter -O2 -g
+# CC_FLAGS = -fPIC -I/usr/include/python$(PYTHON_VERSION) -Wall -Wextra -Wno-unused-parameter -O2 -g
+CC_FLAGS = -fPIC -I/usr/include/python$(PYTHON_VERSION) -Wall -Wextra -Wno-unused-parameter -O2 -g
 LD_FLAGS = -shared
 
 # File names
@@ -19,7 +26,6 @@ nifpy.so: nif_pynif.o
 
 nif_pynif.o:	pynif.c
 	$(CC) $(CC_FLAGS) -o$@ -DPYNIFNAME=nifpy -c $<
-
 
 # demopy.so
 demopy.so: demo_pynif.o
@@ -51,16 +57,16 @@ demo3dy_pynif.o:	pynif.c
 	$(CC) $(CC_FLAGS) -o$@ -DPYNIFNAME=demo3dy -DPYNIFFILE=../priv/demo3.so -c $<
 
 run1: demopy.so
-	python -c "import demopy; print demopy.hello(5)"
+	$(PYTHON) -c "import demopy; print(demopy.hello(5))"
 
 run2: demo2py.so
-	python -c "import demo2py; print demo2py.next(12)"
+	$(PYTHON) -c "import demo2py; print(demo2py.next(12))"
 
 run3: demo3py.so
-	python -c "import demo3py; P = demo3py.new_point(1, 2); print demo3py.get(P)"
+	$(PYTHON) -c "import demo3py; P = demo3py.new_point(1, 2); print(demo3py.get(P))"
 
 run3dy: demo3dy.so
-	python -c "import sys; import ctypes; sys.setdlopenflags(sys.getdlopenflags()|ctypes.RTLD_GLOBAL); import demo3dy; P = demo3dy.new_point(1, 2); Q = demo3dy.new_point(3, 4); demo3dy.add(P, Q); print demo3dy.get(Q)"
+	$(PYTHON) -c "import sys; import ctypes; sys.setdlopenflags(sys.getdlopenflags()|ctypes.RTLD_GLOBAL); import demo3dy; P = demo3dy.new_point(1, 2); Q = demo3dy.new_point(3, 4); demo3dy.add(P, Q); print(demo3dy.get(Q))"
 
 # To remove generated files
 clean:

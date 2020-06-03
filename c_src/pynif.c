@@ -28,34 +28,63 @@
 #define UNUSED(var) (void)var
 #define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
 // #define DBG(fmt, ...)
-//
-// INTEGER
-//
 
-int enif_get_int(ErlNifEnv* env, ERL_NIF_TERM term, int* ip)
+#ifdef Py_STRINGOBJECT_H
+
+static inline const char* py_string_as_string_and_size(PyObject* obj,
+						       Py_ssize_t* lenp)
 {
-    UNUSED(env);
-#ifdef Py_INTOBJECT_H
-    if (PyInt_Check(term)) {
-	*ip = PyInt_AsLong(term);
-	return 1;
-    }
-#endif
-    if (PyLong_Check(term)) {
-	*ip = PyLong_AsLong(term);
-	return 1;
-    }
-    return 0;
+    char* str;
+    if (PyString_AsStringAndSize(obj,&str,lenp) < 0)
+	return NULL;
+    return str;
 }
 
-ERL_NIF_TERM enif_make_int(ErlNifEnv* env, int i)
+#define String_Check(x) PyString_Check((x))
+#define String_FromString(s) PyString_FromString((s))
+#define String_FromStringAndSize(s,n) PyString_FromStringAndSize((s),(n))
+#define String_Size(s) PyString_Size((s))
+#define String_AsString(x) PyString_AsString((x))
+#define String_AsStringAndSize(x,lenp) py_string_as_string_and_size((x),(lenp))
+#else
+#define String_Check(x) PyUnicode_Check((x))
+#define String_FromString(s) PyUnicode_FromString((s))
+#define String_FromStringAndSize(s,n) PyUnicode_FromStringAndSize((s),(n))
+#define String_Size(s) PyUnicode_GetLength((s))
+#define String_AsString(x) ((char*)PyUnicode_AsUTF8((x)))
+#define String_AsStringAndSize(x,lenp) PyUnicode_AsUTF8AndSize((x),(lenp))
+#endif
+
+#ifdef Py_INTOBJECT_H
+#define Integer_Check(x)  (PyInt_Check((x))||PyLong_Check((x)))
+#define Integer_AsLong(x) (PyInt_Check((x)) ? PyInt_AsLong((x)) : PyLong_AsLong((x)))
+#else
+#define Integer_Check(x)   PyLong_Check((x))
+#define Integer_AsLong(x)  PyLong_AsLong((x))
+#endif
+
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
+#define Float_FromString(x) PyFloat_FromString((x))
+#else
+#define Float_FromString(x) PyFloat_FromString((x),NULL)
+#endif
+
+static PyObject* Integer_FromLong(long i)
 {
-    UNUSED(env);
-#ifdef Py_INTOBJECT_H    
+#ifdef Py_INTOBJECT_H
     return PyInt_FromLong(i);
 #else
-    return PyLong_FromLong(i);
+    return PyLong_FromSsize_t((Py_ssize_t) i);
 #endif
+}
+
+static PyObject* Integer_FromUnsignedLong(unsigned long u)
+{
+#ifdef Py_INTOBJECT_H
+    return PyInt_FromSize_t((size_t)u);
+#else
+    return PyLong_FromUnsignedLong(u);
+#endif    
 }
 
 int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
@@ -70,20 +99,9 @@ int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
     if (PyLong_Check(term)) {
 	*ip = PyLong_AsLong(term);
 	return 1;
-    }    
+    } 
     return 0;
 }
-
-ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
-{
-    UNUSED(env);
-#ifdef Py_INTOBJECT_H    
-    return PyInt_FromLong(i);
-#else
-    return PyLong_FromLong(i);
-#endif
-}
-
 
 int enif_get_ulong(ErlNifEnv* env, ERL_NIF_TERM term, unsigned long* up)
 {
@@ -97,51 +115,51 @@ int enif_get_ulong(ErlNifEnv* env, ERL_NIF_TERM term, unsigned long* up)
     if (PyLong_Check(term)) {
 	*up = PyLong_AsUnsignedLong(term);
 	return 1;
-    }    
+    }
     return 0;
 }
 
-// FIXME: generate PyLong if needed?
-ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long i)
+int enif_get_int(ErlNifEnv* env, ERL_NIF_TERM term, int* ip)
+{
+    long value;
+    if (!enif_get_long(env, term, &value))
+	return 0;
+    *ip  = (int) value;
+    return 1;
+}
+
+ERL_NIF_TERM enif_make_int(ErlNifEnv* env, int i)
 {
     UNUSED(env);
-#ifdef Py_INTOBJECT_H    
-    return PyInt_FromLong((long)i);
-#else
-    return PyLong_FromLong((long)i);
-#endif    
+    return Integer_FromLong((long)i);
+}
+
+ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
+{
+    UNUSED(env);    
+    return Integer_FromLong(i);
+}
+
+ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long u)
+{
+    UNUSED(env);
+    return Integer_FromUnsignedLong(u);
 }
 
 int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
 {
-    UNUSED(env);
-#ifdef Py_INTOBJECT_H    
-    if (PyInt_Check(term)) {
-	long val = PyInt_AsLong(term);
-	if (val < 0) return 0;
-	*ip = val;
-	return 1;
-    }
-#endif
-    if (PyLong_Check(term)) {
-	long val = PyLong_AsLong(term);
-	if (val < 0) return 0;
-	*ip = val;
-	return 1;
-    }
-    return 0;
+    unsigned long value;
+    if (!enif_get_ulong(env, term, &value))
+	return 0;
+    // range check!
+    *ip = value;
+    return 1;
 }
 
-// FIXME: generate PyLong if needed?
 ERL_NIF_TERM enif_make_uint(ErlNifEnv* env, unsigned i)
 {
     UNUSED(env);
-#ifdef Py_INTOBJECT_H
-    // must check 32bit(28bit-signed) or 64bit(60bit-signed)
-    return PyInt_FromLong((long)i);
-#else
-    return PyLong_FromLong((long)i);
-#endif
+    return Integer_FromUnsignedLong((unsigned long) i);
 }
 
 //
@@ -164,16 +182,10 @@ ERL_NIF_TERM enif_make_double(ErlNifEnv* env, double d)
     return PyFloat_FromDouble(d);
 }
 
-
 int enif_is_number(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     UNUSED(env);
-#ifdef Py_INTOBJECT_H    
-    return PyInt_Check(term) || PyLong_Check(term) || PyFloat_Check(term);
-#else
-    return PyLong_Check(term) || PyFloat_Check(term);
-#endif
-    
+    return Integer_Check(term) || PyFloat_Check(term);
 }
 
 //
@@ -183,7 +195,7 @@ int enif_is_number(ErlNifEnv* env, ERL_NIF_TERM term)
 int enif_is_atom(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     UNUSED(env);
-    return PyString_Check(term);
+    return String_Check(term);
 }
 
 static int  make_atom(ErlNifEnv* env, const char* name, int existing,
@@ -204,8 +216,8 @@ static int  make_atom(ErlNifEnv* env, const char* name, int existing,
 	}
 	if (PyModule_Check(env->self))
 	    PyModule_AddIntConstant(env->self, name, env->atom_index);
-	atm = PyInt_FromLong(env->atom_index);
-	obj = PyString_FromString(name);
+	atm = Integer_FromLong(env->atom_index);
+	obj = String_FromString(name);
 	env->atom_table[env->atom_index++] = obj;
 	PyDict_SetItemString(env->atoms, name, atm);
 	*atomp = atm;
@@ -242,8 +254,8 @@ static int get_string(PyObject* string, char* buf, unsigned len,
 		      ErlNifCharEncoding coding)
 {
     UNUSED(coding);
-    size_t str_len = PyString_Size(string);
-    char* str = PyString_AsString(string);
+    size_t str_len = String_Size(string);
+    char* str = String_AsString(string);
     if (str_len < len) {
 	memcpy(buf, str, str_len);
 	buf[str_len] = '\0';
@@ -271,8 +283,8 @@ int enif_get_atom(ErlNifEnv* env, ERL_NIF_TERM atom, char* buf, unsigned len,
 	    }
 	}
     }
-    else if (PyInt_Check(atom)) {
-	long i = PyInt_AsLong(atom);
+    else if (Integer_Check(atom)) {
+	long i = Integer_AsLong(atom);
 	if ((i < 0) || (i >= (long)env->atom_index))
 	    return 0;
 	else if (i == 0) {
@@ -292,7 +304,7 @@ int enif_get_atom(ErlNifEnv* env, ERL_NIF_TERM atom, char* buf, unsigned len,
 	    return get_string(atom, buf, len, coding);
 	}
     }
-    else if (PyString_Check(atom)) {
+    else if (String_Check(atom)) {
 	return get_string(atom, buf, len, coding);
     }
     return 0;
@@ -314,8 +326,8 @@ int enif_get_atom_length(ErlNifEnv* env, ERL_NIF_TERM atom, unsigned* len,
 	    return 1;
 	}
     }
-    else if (PyInt_Check(atom)) {
-	long i = PyInt_AsLong(atom);
+    else if (Integer_Check(atom)) {
+	long i = Integer_AsLong(atom);
 	if ((i < 0) || (i >= (long)env->atom_index))
 	    return 0;
 	if (i == 0) {
@@ -327,12 +339,12 @@ int enif_get_atom_length(ErlNifEnv* env, ERL_NIF_TERM atom, unsigned* len,
 	    return 1;
 	}
 	else {
-	    *len = PyString_Size(env->atom_table[i]);
+	    *len = String_Size(env->atom_table[i]);
 	    return 1;
 	}
     }
-    else if (PyString_Check(atom)) {
-	size_t str_len = PyString_Size(atom);
+    else if (String_Check(atom)) {
+	size_t str_len = String_Size(atom);
 	*len = str_len;
 	return 1;
     }
@@ -347,7 +359,7 @@ ERL_NIF_TERM enif_make_string_len(ErlNifEnv* env, const char* string, size_t len
 {
     UNUSED(env);
     UNUSED(coding);
-    return PyString_FromStringAndSize(string, len);
+    return String_FromStringAndSize(string, len);
 }
 
 // 
@@ -741,16 +753,16 @@ static ssize_t iolist_size(ERL_NIF_TERM term)
 {
     if (PyByteArray_Check(term))
 	return PyByteArray_Size(term);
-    else if (PyString_Check(term))
-	return PyString_Size(term);
+    else if (String_Check(term))
+	return String_Size(term);
     else if (PyList_Check(term)) {
 	ssize_t len = PyList_Size(term);
 	ssize_t size = 0;
 	int i;
 	for (i = 0; i < (int)len; i++) {
-	    PyObject* item = PyList_GET_ITEM(term, i);
-	    if (!PyInt_Check(item)) {
-		long v = PyInt_AsLong(item);
+	    PyObject* item = PyList_GetItem(term, i);
+	    if (!Integer_Check(item)) {
+		long v = Integer_AsLong(item);
 		if ((v < 0) || (v > 255))
 		    return -1;
 		size++;
@@ -776,9 +788,9 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	memcpy(dst, src, slen);
 	return slen;
     }
-    else if (PyString_Check(term)) {
-	ssize_t slen = PyString_Size(term);
-	char* src = PyString_AsString(term);
+    else if (String_Check(term)) {
+	ssize_t slen = String_Size(term);
+	char* src = String_AsString(term);
 	if (slen > dlen) return -1;
 	memcpy(dst, src, slen);
 	return slen;
@@ -789,9 +801,9 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	int i;
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t isize;
-	    PyObject* item = PyList_GET_ITEM(term, i);
-	    if (!PyInt_Check(item)) {
-		long v = PyInt_AsLong(item);
+	    PyObject* item = PyList_GetItem(term, i);
+	    if (!Integer_Check(item)) {
+		long v = Integer_AsLong(item);
 		if ((v < 0) || (v > 255))
 		    return -1;
 		*dst++ = v;
@@ -820,9 +832,9 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 	bin->ref_bin = term;
 	return 1;	
     }
-    else if (PyString_Check(term)) {
-	bin->size = PyString_Size(term);
-	bin->data = (unsigned char*) PyString_AsString(term);
+    else if (String_Check(term)) {
+	bin->size = String_Size(term);
+	bin->data = (unsigned char*) String_AsString(term);
 	bin->ref_bin = term;
 	return 1;
     }
@@ -928,23 +940,44 @@ void enif_rwlock_rwunlock(ErlNifRWLock *rwlck)
 int enif_tsd_key_create(char *name, ErlNifTSDKey *key)
 {
     UNUSED(name);
+#ifdef USE_TSS_KEY
+    Py_tss_t k;
+    if (PyThread_tss_create(&k) == 0) {
+	*key = k;
+	return 1;
+    }
+    return 0;
+#else
     *key = PyThread_create_key();
+#endif
     return 0;
 }
 
 void enif_tsd_key_destroy(ErlNifTSDKey key)
 {
+#ifdef USE_TSS_KEY    
+    PyThread_tss_delete(&key);
+#else
     PyThread_delete_key(key);
+#endif
 }
     
 void enif_tsd_set(ErlNifTSDKey key, void *data)
 {
+#ifdef USE_TSS_KEY
+    (void) PyThread_tss_set(&key, data);
+#else
     (void) PyThread_set_key_value(key, data);
+#endif
 }
     
 void* enif_tsd_get(ErlNifTSDKey key)
 {
+#ifdef USE_TSS_KEY
+    return PyThread_tss_get(&key);
+#else
     return PyThread_get_key_value(key);
+#endif
 }
 
 // I/O
@@ -989,7 +1022,7 @@ typedef struct _resource_type_t {
 static void resource_dealloc(PyObject* obj)
 {
     Resource* ptr = (Resource*) obj;
-    ResourceType* rtp = (ResourceType*) ptr->ob_type;
+    ResourceType* rtp = (ResourceType*) Py_TYPE(ptr); //ptr->ob_type
     DBG("dealloc resource object %s %p\r\n", rtp->tp.tp_name, obj);
     (*rtp->ini.dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
 }
@@ -1006,7 +1039,7 @@ ErlNifResourceType* enif_open_resource_type_x(
 
     memset(rtp, 0, sizeof(ResourceType));
 
-    rtp->tp.ob_size = 1;  // for dtor
+    Py_SIZE(rtp) = 1; // ->tp.ob_size = 1;  // for dtor
     rtp->tp.tp_name = name_str;
     rtp->tp.tp_basicsize = sizeof(Resource);
     rtp->tp.tp_itemsize  = 1;  // since it is a byte array (any struture)!
@@ -1187,8 +1220,8 @@ static size_t encode_ulong(unsigned char* ptr, unsigned long v)
 // calculate number of bytes to represent term as binary
 static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 {
-    if (PyInt_Check(term)) {
-	long value = PyInt_AsLong(term);
+    if (Integer_Check(term)) {
+	long value = Integer_AsLong(term);
 	if ((value >= 0) && (value <= 0xff))
 	    return 1+1;  // small_integer (uint8)
 	else if ((value >= -0x80000000) && (value <= 0x7ffffff))
@@ -1210,8 +1243,8 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
     else if (PyFloat_Check(term)) {
 	return 1+8;  // NEW_FLOAT
     }
-    else if (PyString_Check(term)) {
-	ssize_t len = PyString_Size(term);
+    else if (String_Check(term)) {
+	ssize_t len = String_Size(term);
 	if (len <= 0xffff)
 	    return 1+2+len;  // STRING encode
 	else
@@ -1223,7 +1256,7 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 	int i;
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t size1;
-	    if ((size1 = bytesize_of_term(PyList_GET_ITEM(term, i))) < 0)
+	    if ((size1 = bytesize_of_term(PyList_GetItem(term, i))) < 0)
 		return -1;
 	    size += size1;
 	}
@@ -1239,7 +1272,7 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 	    size = 1+4;
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t size1;
-	    if ((size1 = bytesize_of_term(PyTuple_GET_ITEM(term, i))) < 0)
+	    if ((size1 = bytesize_of_term(PyTuple_GetItem(term, i))) < 0)
 		return -1;
 	    size += size1;
 	}
@@ -1351,12 +1384,12 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case SMALL_INTEGER:
 	if (len < 2) return 0;
-	if ((*term = PyInt_FromLong(get_uint8(ptr+1))) == NULL)
+	if ((*term = Integer_FromLong(get_uint8(ptr+1))) == NULL)
 	    return 0;
 	return 1+1;
     case INTEGER:
 	if (len < 5) return 0;
-	if ((*term = PyInt_FromLong(get_int32(ptr+1))) == NULL)
+	if ((*term = Integer_FromLong(get_int32(ptr+1))) == NULL)
 	    return 0;
 	return 1+4;
     case SMALL_BIG: { // t,n0,s,d0,d1,...dn-1
@@ -1394,9 +1427,8 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	return 1+4+1+blen;
     }	
     case FLOAT: {  // t,string(31)
-	char* junk = NULL;
-	PyObject* string = PyString_FromStringAndSize((const char*)ptr+1, 31);
-	if ((*term = PyFloat_FromString(string, &junk)) == NULL)
+	PyObject* string = String_FromStringAndSize((const char*)ptr+1, 31);
+	if ((*term = Float_FromString(string)) == NULL)
 	    return 0;
 	return 32;
     }
@@ -1419,7 +1451,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	if (len < 3) return 0;
 	blen = get_uint16(ptr+1);
 	DBG("decode_term: string length=%ld\n", blen);
-	if ((*term = PyString_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
+	if ((*term = String_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
 	    return 0;
 	return 1+2+blen;
     }
@@ -1518,8 +1550,8 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 
 ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 {
-    if (PyInt_Check(term)) {
-	long value = PyInt_AsLong(term);
+    if (Integer_Check(term)) {
+	long value = Integer_AsLong(term);
 	if ((value >= 0) && (value <= 0xff)) {
 	    if (size < 2) return -1;
 	    DBG("encode_term: SMALL_INTEGER %ld\n", value);
@@ -1557,34 +1589,6 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    }
 	}
     }
-    else if (PyLong_Check(term)) {
-	size_t nbytes = (_PyLong_NumBits(term) + 7) / 8;
-	int is_signed = _PyLong_Sign(term);
-	if (nbytes <= 255) {
-	    if (size < (ssize_t)nbytes+3) return -1;
-	    DBG("encode_term: SMALL_BIG size=%ld\n", nbytes);
-	    ptr[0] = SMALL_BIG;
-	    put_uint8(ptr+1, nbytes);
-	    ptr[2] = is_signed;
-	    _PyLong_AsByteArray((PyLongObject*)term,
-				ptr+3, nbytes, 1, is_signed);
-	    if (is_signed)
-		nbytes = negate_bytes(ptr+3, nbytes, ptr+3);
-	    return 1+1+1+nbytes;	    
-	}
-	else {
-	    if (size < (ssize_t)nbytes+6) return -1;
-	    DBG("encode_term: LARGE_BIG %ld\n", nbytes);
-	    ptr[0] = LARGE_BIG;
-	    put_uint32(ptr+1, nbytes);
-	    ptr[5] = is_signed;
-	    _PyLong_AsByteArray((PyLongObject*)term,
-				ptr+6, nbytes, 1, is_signed);
-	    if (is_signed)
-		nbytes = negate_bytes(ptr+6, nbytes, ptr+6);
-	    return 1+4+1+nbytes;
-	}
-    }
     else if (PyBool_Check(term)) {
 	if (term == Py_True) {
 	    if (size < 6) return -1;
@@ -1610,10 +1614,10 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	_PyFloat_Pack8(PyFloat_AsDouble(term), ptr+1, 0);
 	return 1+8;  // NEW_FLOAT
     }
-    else if (PyString_Check(term)) {
-	char* str;
+    else if (String_Check(term)) {
+	const char* str;
 	Py_ssize_t len;
-	if (PyString_AsStringAndSize(term, &str, &len) < 0)
+	if ((str = String_AsStringAndSize(term, &len)) == NULL)
 	    return 0;
 	if (len <= 0xffff) {
 	    if (size < 3+len) return -1;
@@ -1650,7 +1654,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	size -= 5;
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t size1;
-	    if ((size1 = encode_term(PyList_GET_ITEM(term, i),ptr,size))<=0)
+	    if ((size1 = encode_term(PyList_GetItem(term, i),ptr,size))<=0)
 		return -1;
 	    ptr += size1;
 	    size -= size1;
@@ -1683,7 +1687,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	}
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t size1;
-	    if ((size1=encode_term(PyTuple_GET_ITEM(term, i),ptr,size))<=0)
+	    if ((size1=encode_term(PyTuple_GetItem(term, i),ptr,size))<=0)
 		return -1;
 	    ptr += size1;
 	    size -= size1;
@@ -1890,12 +1894,26 @@ static int is_method_installed(PyMethodDef* methods, size_t num_methods,
     return 0;
 }
 
-PyMODINIT_FUNC
-CAT2(init,PYNIFNAME)(void)
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
+#define RETURN_FAIL return NULL
+#define RETURN_MODULE(m) return m
+#else
+#define RETURN_FAIL return
+#define RETURN_MODULE(m) return
+#endif
+
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
+static PyModuleDef def;
+#define MODNAME CAT2(PyInit_,PYNIFNAME)
+#else
+#define MODNAME CAT2(init,PYNIFNAME)
+#endif
+
+PyMODINIT_FUNC MODNAME(void)
 {
     // now convert all funcs into PyMethodDef array
     PyObject *m;
-    PyMethodDef* methods;
+    PyMethodDef* methods;    
     int i;
     int fi;
     size_t num_methods;
@@ -1914,7 +1932,7 @@ CAT2(init,PYNIFNAME)(void)
 	if ((handle = dlopen(file,RTLD_LAZY)) == NULL) {
 	    fprintf(stderr, "Failed open %s dynamic library\r\n", file);
 	    // FIXME: set error
-	    return;
+	    RETURN_FAIL;
 	}
 	// first find the proc addr function
 	nif_init = (ErlNifEntry* (*)(void)) dlsym(handle,"nif_init");
@@ -1930,7 +1948,7 @@ CAT2(init,PYNIFNAME)(void)
 	fprintf(stderr, "sorry to many functions limit is %d \r\n",
 		MAX_PYNIF_FUNCS);
 	fprintf(stderr, "  to fix update MAX_PYNIF_FUNS!\r\n");
-	return;
+	RETURN_FAIL;
     }
     
     methods = malloc(sizeof(PyMethodDef)*(nif_entry->num_of_funcs+1));
@@ -1975,8 +1993,21 @@ CAT2(init,PYNIFNAME)(void)
 	}
     }
 
-    m = Py_InitModule(STRINGIFY(PYNIFNAME), methods);
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
+    {
+	PyModuleDef_Init(&def);
+	def.m_name = STRINGIFY(PYNIFNAME);
+	def.m_doc  = "PyNif wrapper";
+	def.m_size = -1;
+	def.m_methods = methods;
 
+	m = PyModule_Create(&def);
+    }
+#else
+    {
+	m = Py_InitModule(STRINGIFY(PYNIFNAME), methods);
+    }
+#endif
     memset(&nif_env, 0, sizeof(ErlNifEnv));
 
     nif_env.atoms = PyDict_New();
@@ -1998,6 +2029,8 @@ CAT2(init,PYNIFNAME)(void)
     if (nif_entry->load != NULL) {
 	ERL_NIF_TERM load_info = enif_make_int(&nif_env, 0);
 	int r = nif_entry->load(&nif_env, &nif_env.priv_data, load_info);
-	if (r < 0) return;
+	if (r < 0)
+	    RETURN_FAIL;
     }
+    RETURN_MODULE(m);
 }

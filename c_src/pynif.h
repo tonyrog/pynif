@@ -12,7 +12,15 @@ typedef PyObject* ERL_NIF_TERM;
 typedef struct _erl_nif_mutex ErlNifMutex;
 typedef struct _erl_nif_rwlock ErlNifRWLock;
 typedef PyTypeObject ErlNifResourceType;
+
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>7))
+#define USE_TSS_KEY 1
+typedef Py_tss_t ErlNifTSDKey;
+#else
+#undef USE_TSS_KEY
 typedef int ErlNifTSDKey;
+#endif
+
 
 typedef enum erl_ext_tag_t {
     MAGIC = 131,
@@ -100,12 +108,10 @@ typedef struct
 {
     size_t size;
     unsigned char* data;
-    // int allocated;        // 1 if data is allocated
     void* ref_bin;
     /* for future additions to be ABI compatible (same struct size) */
     void* __spare__[2];
 } ErlNifBinary;
-
 
 typedef struct enif_func_t
 {
