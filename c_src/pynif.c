@@ -362,6 +362,42 @@ ERL_NIF_TERM enif_make_string_len(ErlNifEnv* env, const char* string, size_t len
     return String_FromStringAndSize(string, len);
 }
 
+ERL_NIF_TERM enif_make_string(ErlNifEnv* env, const char* string, ErlNifCharEncoding coding)
+{
+    UNUSED(env);
+    UNUSED(coding);
+    return String_FromString(string);
+}
+
+int enif_get_string(ErlNifEnv* env, ERL_NIF_TERM list, char* buf, unsigned len, ErlNifCharEncoding coding)
+{
+    if (String_Check(list)) {
+	return get_string(list, buf, len, coding);
+    }
+    else if (PyList_Check(list)) {
+	ssize_t llen = PyList_Size(list);
+	ssize_t remain = (ssize_t) len; // remain in out buffer
+	int i = 0;
+
+	while(remain && (i < llen)) {
+	    PyObject* item = PyList_GetItem(list, i);
+	    if (!Integer_Check(item)) return 0;
+	    else {
+		long v = Integer_AsLong(item);
+		if ((v < 0) || (v > 255))
+		    return 0;
+		buf[i++] = v;
+		remain--;
+	    }
+	}
+	if (remain == 0)
+	    return -((int)len);  // truncated
+	buf[i++] = 0;
+	return i;
+    }
+    return 0;
+}
+
 // 
 // ERROR
 //
@@ -576,6 +612,106 @@ ERL_NIF_TERM enif_make_list_from_array(ErlNifEnv* env,
     return list;    
 }
 
+ERL_NIF_TERM enif_make_list1(ErlNifEnv* env,
+			      ERL_NIF_TERM e1)
+{
+    UNUSED(env);
+    return enif_make_list(env, 1, e1);
+}
+
+ERL_NIF_TERM enif_make_list2(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2)
+{
+    UNUSED(env);
+    return enif_make_list(env, 2, e1, e2);
+}
+
+ERL_NIF_TERM enif_make_list3(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3)
+{
+    UNUSED(env);
+    return enif_make_list(env, 3, e1, e2, e3);
+}
+
+ERL_NIF_TERM enif_make_list4(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4)
+{
+    UNUSED(env);
+    return enif_make_list(env, 4, e1, e2, e3, e4);
+}
+
+ERL_NIF_TERM enif_make_list5(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4,
+			      ERL_NIF_TERM e5)
+{
+    UNUSED(env);
+    return enif_make_list(env, 5, e1, e2, e3, e4, e5);
+}
+
+ERL_NIF_TERM enif_make_list6(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4,
+			      ERL_NIF_TERM e5,
+			      ERL_NIF_TERM e6)
+{
+    UNUSED(env);
+    return enif_make_list(env, 6, e1, e2, e3, e4, e5, e6);
+}
+
+ERL_NIF_TERM enif_make_list7(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4,
+			      ERL_NIF_TERM e5,
+			      ERL_NIF_TERM e6,
+			      ERL_NIF_TERM e7)
+{
+    UNUSED(env);
+    return enif_make_list(env, 7, e1, e2, e3, e4, e5, e6, e7);
+}
+
+ERL_NIF_TERM enif_make_list8(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4,
+			      ERL_NIF_TERM e5,
+			      ERL_NIF_TERM e6,
+			      ERL_NIF_TERM e7,
+			      ERL_NIF_TERM e8)
+{
+    UNUSED(env);
+    return enif_make_list(env, 8, e1, e2, e3, e4, e5, e6, e7, e8);
+}
+
+ERL_NIF_TERM enif_make_list9(ErlNifEnv* env,
+			      ERL_NIF_TERM e1,
+			      ERL_NIF_TERM e2,
+			      ERL_NIF_TERM e3,
+			      ERL_NIF_TERM e4,
+			      ERL_NIF_TERM e5,
+			      ERL_NIF_TERM e6,
+			      ERL_NIF_TERM e7,
+			      ERL_NIF_TERM e8,
+			      ERL_NIF_TERM e9)
+{
+    UNUSED(env);
+    return enif_make_list(env, 9, e1, e2, e3, e4, e5, e6, e7, e8, e9);
+}
+
+
 // FIXME: Probably VERY slow!
 int enif_get_list_cell(ErlNifEnv* env, ERL_NIF_TERM term,
 		       ERL_NIF_TERM* head, ERL_NIF_TERM* tail)
@@ -609,21 +745,6 @@ ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM hd, ERL_NIF_TERM t
     }
 }
 
-//
-// MAP
-//
-
-int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
-			ErlNifBinary* bin)
-{
-    if (PyByteArray_Check(bin_term)) {
-	bin->size = PyByteArray_Size(bin_term);
-	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
-	bin->ref_bin = bin_term;
-	return 1;
-    }
-    return 0;
-}
 
 ErlNifEnv* enif_alloc_env(void)
 {
@@ -708,6 +829,7 @@ int enif_make_map_from_arrays(ErlNifEnv *env, ERL_NIF_TERM keys[], ERL_NIF_TERM 
     return 1;
 }
 
+
 //
 // MEMORY
 //
@@ -725,6 +847,12 @@ void* enif_realloc(void* ptr, size_t size)
 {
     return PyMem_Realloc(ptr, size);
 }
+
+
+//
+// BINARY
+//
+
 
 int enif_alloc_binary(size_t size, ErlNifBinary* bin)
 {
@@ -761,7 +889,7 @@ static ssize_t iolist_size(ERL_NIF_TERM term)
 	int i;
 	for (i = 0; i < (int)len; i++) {
 	    PyObject* item = PyList_GetItem(term, i);
-	    if (!Integer_Check(item)) {
+	    if (Integer_Check(item)) {
 		long v = Integer_AsLong(item);
 		if ((v < 0) || (v > 255))
 		    return -1;
@@ -802,7 +930,7 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	for (i = 0; i < (int)len; i++) {
 	    ssize_t isize;
 	    PyObject* item = PyList_GetItem(term, i);
-	    if (!Integer_Check(item)) {
+	    if (Integer_Check(item)) {
 		long v = Integer_AsLong(item);
 		if ((v < 0) || (v > 255))
 		    return -1;
@@ -821,6 +949,19 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	return size;
     }
     return -1;
+}
+
+
+int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
+			ErlNifBinary* bin)
+{
+    if (PyByteArray_Check(bin_term)) {
+	bin->size = PyByteArray_Size(bin_term);
+	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
+	bin->ref_bin = bin_term;
+	return 1;
+    }
+    return 0;
 }
 
 int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,

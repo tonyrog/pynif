@@ -1,0 +1,464 @@
+
+OK void* enif_priv_data(ErlNifEnv*);
+
+OK void* enif_alloc(size_t size);
+
+OK void enif_free(void* ptr);
+
+OK int enif_is_atom(ErlNifEnv*, ERL_NIF_TERM term);
+
+# int enif_is_binary(ErlNifEnv*, ERL_NIF_TERM term);
+
+# int enif_is_ref(ErlNifEnv*, ERL_NIF_TERM term);
+
+OK int enif_inspect_binary(ErlNifEnv*, ERL_NIF_TERM bin_term, ErlNifBinary* bin);
+
+OK int enif_alloc_binary(size_t size, ErlNifBinary* bin);
+
+# int enif_realloc_binary(ErlNifBinary* bin, size_t size);
+
+OK void enif_release_binary(ErlNifBinary* bin);
+
+OK int enif_get_int(ErlNifEnv*, ERL_NIF_TERM term, int* ip);
+
+OK int enif_get_ulong(ErlNifEnv*, ERL_NIF_TERM term, unsigned long* ip);
+
+OK int enif_get_double(ErlNifEnv*, ERL_NIF_TERM term, double* dp);
+
+OK int enif_get_list_cell(ErlNifEnv* env, ERL_NIF_TERM term, ERL_NIF_TERM* head, ERL_NIF_TERM* tail);
+
+OK int enif_get_tuple(ErlNifEnv* env, ERL_NIF_TERM tpl, int* arity, const ERL_NIF_TERM** array);
+
+# int enif_is_identical(ERL_NIF_TERM lhs, ERL_NIF_TERM rhs);
+
+# int enif_compare(ERL_NIF_TERM lhs, ERL_NIF_TERM rhs);
+
+OK ERL_NIF_TERM enif_make_binary(ErlNifEnv* env, ErlNifBinary* bin);
+
+OK ERL_NIF_TERM enif_make_badarg(ErlNifEnv* env);
+
+OK ERL_NIF_TERM enif_make_int(ErlNifEnv* env, int i);
+
+OK ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long i);
+
+OK ERL_NIF_TERM enif_make_double(ErlNifEnv* env, double d);
+
+OK ERL_NIF_TERM enif_make_atom(ErlNifEnv* env, const char* name);
+
+OK int enif_make_existing_atom(ErlNifEnv* env, const char* name, ERL_NIF_TERM* atom, ErlNifCharEncoding);
+
+OK ERL_NIF_TERM enif_make_tuple(ErlNifEnv* env, unsigned cnt, ...);
+
+OK ERL_NIF_TERM enif_make_list(ErlNifEnv* env, unsigned cnt, ...);
+
+OK ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM car, ERL_NIF_TERM cdr);
+
+OK ERL_NIF_TERM enif_make_string(ErlNifEnv* env, const char* string, ErlNifCharEncoding);
+
+# ERL_NIF_TERM enif_make_ref(ErlNifEnv* env);
+
+OK ErlNifMutex* enif_mutex_create(char *name);
+
+OK void enif_mutex_destroy(ErlNifMutex *mtx);
+
+OK int enif_mutex_trylock(ErlNifMutex *mtx);
+
+OK void enif_mutex_lock(ErlNifMutex *mtx);
+
+OK void enif_mutex_unlock(ErlNifMutex *mtx);
+
+# ErlNifCond* enif_cond_create(char *name);
+
+# void enif_cond_destroy(ErlNifCond *cnd);
+
+# void enif_cond_signal(ErlNifCond *cnd);
+
+# void enif_cond_broadcast(ErlNifCond *cnd);
+
+# void enif_cond_wait(ErlNifCond *cnd, ErlNifMutex *mtx);
+
+OK ErlNifRWLock* enif_rwlock_create(char *name);
+
+OK void enif_rwlock_destroy(ErlNifRWLock *rwlck);
+
+OK int enif_rwlock_tryrlock(ErlNifRWLock *rwlck);
+
+OK void enif_rwlock_rlock(ErlNifRWLock *rwlck);
+
+OK void enif_rwlock_runlock(ErlNifRWLock *rwlck);
+
+OK int enif_rwlock_tryrwlock(ErlNifRWLock *rwlck);
+
+OK void enif_rwlock_rwlock(ErlNifRWLock *rwlck);
+
+OK void enif_rwlock_rwunlock(ErlNifRWLock *rwlck);
+
+OK int enif_tsd_key_create(char *name, ErlNifTSDKey *key);
+
+OK void enif_tsd_key_destroy(ErlNifTSDKey key);
+
+OK void enif_tsd_set(ErlNifTSDKey key, void *data);
+
+OK void* enif_tsd_get(ErlNifTSDKey key);
+
+# ErlNifThreadOpts* enif_thread_opts_create(char *name);
+
+# void enif_thread_opts_destroy(ErlNifThreadOpts *opts);
+
+# int enif_thread_create(char *name,ErlNifTid *tid,void * (*func)void *),void *args,ErlNifThreadOpts *opts));
+
+# ErlNifTid enif_thread_self(void);
+
+# int enif_equal_tids(ErlNifTid tid1, ErlNifTid tid2);
+
+# void enif_thread_exit(void *resp);
+
+# int enif_thread_join(ErlNifTid, void **respp);
+
+OK void* enif_realloc(void* ptr, size_t size);
+
+# void enif_system_info(ErlNifSysInfo *sip, size_t si_size);
+
+OK int enif_fprintf(FILE* filep, const char *format, ...);
+
+OK int enif_inspect_iolist_as_binary(ErlNifEnv*, ERL_NIF_TERM term, ErlNifBinary* bin);
+
+# ERL_NIF_TERM enif_make_sub_binary(ErlNifEnv*, ERL_NIF_TERM bin_term, size_t pos, size_t size);
+
+OK int enif_get_string(ErlNifEnv*, ERL_NIF_TERM list, char* buf, unsigned len, ErlNifCharEncoding);
+
+OK int enif_get_atom(ErlNifEnv*, ERL_NIF_TERM atom, char* buf, unsigned len, ErlNifCharEncoding);
+
+# int enif_is_fun(ErlNifEnv*, ERL_NIF_TERM term);
+
+# int enif_is_pid(ErlNifEnv*, ERL_NIF_TERM term);
+
+# int enif_is_port(ErlNifEnv*, ERL_NIF_TERM term);
+
+OK int enif_get_uint(ErlNifEnv*, ERL_NIF_TERM term, unsigned* ip);
+
+OK int enif_get_long(ErlNifEnv*, ERL_NIF_TERM term, long* ip);
+
+OK ERL_NIF_TERM enif_make_uint(ErlNifEnv*, unsigned i);
+
+OK ERL_NIF_TERM enif_make_long(ErlNifEnv*, long i);
+
+OK ERL_NIF_TERM enif_make_tuple_from_array(ErlNifEnv*, const ERL_NIF_TERM arr[], unsigned cnt);
+
+OK ERL_NIF_TERM enif_make_list_from_array(ErlNifEnv*, const ERL_NIF_TERM arr[], unsigned cnt);
+
+OK int enif_is_empty_list(ErlNifEnv*, ERL_NIF_TERM term);
+
+OK ErlNifResourceType* enif_open_resource_type(ErlNifEnv*, const char* module_str, const char* name_str, void (*dtor)ErlNifEnv*,void *), ErlNifResourceFlags flags, ErlNifResourceFlags* tried));
+
+OK void* enif_alloc_resource(ErlNifResourceType* type, size_t size);
+
+OK void enif_release_resource(void* obj);
+
+OK ERL_NIF_TERM enif_make_resource(ErlNifEnv*, void* obj);
+
+OK int enif_get_resource(ErlNifEnv*, ERL_NIF_TERM term, ErlNifResourceType* type, void** objp);
+
+OK size_t enif_sizeof_resource(void* obj);
+
+OK unsigned char* enif_make_new_binary(ErlNifEnv*,size_t size,ERL_NIF_TERM* termp);
+
+OK int enif_is_list(ErlNifEnv*, ERL_NIF_TERM term);
+
+OK int enif_is_tuple(ErlNifEnv*, ERL_NIF_TERM term);
+
+OK int enif_get_atom_length(ErlNifEnv*, ERL_NIF_TERM atom, unsigned* len, ErlNifCharEncoding);
+
+OK int enif_get_list_length(ErlNifEnv* env, ERL_NIF_TERM term, unsigned* len);
+
+OK ERL_NIF_TERM  enif_make_atom_len(ErlNifEnv* env, const char* name, size_t len);
+
+OK int  enif_make_existing_atom_len(ErlNifEnv* env, const char* name, size_t len, ERL_NIF_TERM* atom, ErlNifCharEncoding);
+
+OK ERL_NIF_TERM enif_make_string_len(ErlNifEnv* env, const char* string, size_t len, ErlNifCharEncoding);
+
+OK ErlNifEnv* enif_alloc_env(void);
+
+# void enif_free_env(ErlNifEnv* env);
+
+OK void enif_clear_env(ErlNifEnv* env);
+
+??? int enif_send(ErlNifEnv* env, const ErlNifPid* to_pid, ErlNifEnv* msg_env, ERL_NIF_TERM msg);
+
+# ERL_NIF_TERM enif_make_copy(ErlNifEnv* dst_env, ERL_NIF_TERM src_term);
+
+OK ErlNifPid* enif_self(ErlNifEnv* caller_env, ErlNifPid* pid);
+
+# int enif_get_local_pid(ErlNifEnv* env, ERL_NIF_TERM, ErlNifPid* pid);
+
+OK void enif_keep_resource(void* obj);
+
+# ERL_NIF_TERM enif_make_resource_binary(ErlNifEnv*,void* obj,const void* data, size_t size);
+
+# int enif_get_int64(ErlNifEnv*, ERL_NIF_TERM term, ErlNifSInt64* ip);
+
+# int enif_get_uint64(ErlNifEnv*, ERL_NIF_TERM term, ErlNifUInt64* ip);
+
+# ERL_NIF_TERM enif_make_int64(ErlNifEnv*, ErlNifSInt64);
+
+# ERL_NIF_TERM enif_make_uint64(ErlNifEnv*, ErlNifUInt64);
+
+# int enif_is_exception(ErlNifEnv*, ERL_NIF_TERM term);
+
+# int enif_make_reverse_list(ErlNifEnv*, ERL_NIF_TERM term, ERL_NIF_TERM *list);
+
+OK int enif_is_number(ErlNifEnv*, ERL_NIF_TERM term);
+
+# void* enif_dlopen(const char* lib, void (*err_handler)void*,const char*), void* err_arg));
+
+# void* enif_dlsym(void* handle, const char* symbol, void (*err_handler)void*,const char*), void* err_arg));
+
+int enif_consume_timeslice(ErlNifEnv*, int percent);
+
+int  enif_is_map (ErlNifEnv* env, ERL_NIF_TERM term);
+
+int  enif_get_map_size (ErlNifEnv* env, ERL_NIF_TERM term, size_t *size);
+
+ERL_NIF_TERM  enif_make_new_map (ErlNifEnv* env);
+
+int  enif_make_map_put (ErlNifEnv* env, ERL_NIF_TERM map_in, ERL_NIF_TERM key, ERL_NIF_TERM value, ERL_NIF_TERM* map_out);
+
+int  enif_get_map_value (ErlNifEnv* env, ERL_NIF_TERM map, ERL_NIF_TERM key, ERL_NIF_TERM* value);
+
+int  enif_make_map_update (ErlNifEnv* env, ERL_NIF_TERM map_in, ERL_NIF_TERM key, ERL_NIF_TERM value, ERL_NIF_TERM* map_out);
+
+int  enif_make_map_remove (ErlNifEnv* env, ERL_NIF_TERM map_in, ERL_NIF_TERM key, ERL_NIF_TERM* map_out);
+
+int  enif_map_iterator_create (ErlNifEnv *env, ERL_NIF_TERM map, ErlNifMapIterator *iter, ErlNifMapIteratorEntry entry);
+
+void  enif_map_iterator_destroy (ErlNifEnv *env, ErlNifMapIterator *iter);
+
+int  enif_map_iterator_is_head (ErlNifEnv *env, ErlNifMapIterator *iter);
+
+int  enif_map_iterator_is_tail (ErlNifEnv *env, ErlNifMapIterator *iter);
+
+int  enif_map_iterator_next (ErlNifEnv *env, ErlNifMapIterator *iter);
+
+int  enif_map_iterator_prev (ErlNifEnv *env, ErlNifMapIterator *iter);
+
+int  enif_map_iterator_get_pair (ErlNifEnv *env, ErlNifMapIterator *iter, ERL_NIF_TERM *key, ERL_NIF_TERM *value);
+
+ERL_NIF_TERM enif_schedule_nif(ErlNifEnv*,const char*,int,ERL_NIF_TERM (*)ErlNifEnv*,int,const ERL_NIF_TERM[]),int,const ERL_NIF_TERM[]));
+
+int  enif_has_pending_exception (ErlNifEnv *env, ERL_NIF_TERM* reason);
+
+ERL_NIF_TERM  enif_raise_exception (ErlNifEnv *env, ERL_NIF_TERM reason);
+
+int enif_getenv(const char* key, char* value, size_t* value_size);
+
+ErlNifTime  enif_monotonic_time (ErlNifTimeUnit);
+
+ErlNifTime  enif_time_offset (ErlNifTimeUnit);
+
+ErlNifTime  enif_convert_time_unit (ErlNifTime, ErlNifTimeUnit, ErlNifTimeUnit);
+
+ERL_NIF_TERM  enif_now_time (ErlNifEnv *env);
+
+ERL_NIF_TERM  enif_cpu_time (ErlNifEnv *env);
+
+ERL_NIF_TERM  enif_make_unique_integer (ErlNifEnv *env, ErlNifUniqueInteger properties);
+
+int  enif_is_current_process_alive (ErlNifEnv *env);
+
+int  enif_is_process_alive (ErlNifEnv *env, ErlNifPid *pid);
+
+int  enif_is_port_alive (ErlNifEnv *env, ErlNifPort *port_id);
+
+int  enif_get_local_port (ErlNifEnv* env, ERL_NIF_TERM, ErlNifPort* port_id);
+
+int  enif_term_to_binary (ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin);
+
+size_t  enif_binary_to_term (ErlNifEnv *env, const unsigned char* data, size_t sz, ERL_NIF_TERM *term, unsigned int opts);
+
+int  enif_port_command (ErlNifEnv *env, const ErlNifPort* to_port, ErlNifEnv *msg_env, ERL_NIF_TERM msg);
+
+int enif_thread_type(void);
+
+int enif_snprintf(char * buffer, size_t size, const char *format, ...);
+
+int enif_select(ErlNifEnv* env, ErlNifEvent e, enum ErlNifSelectFlags flags, void* obj, const ErlNifPid* pid, ERL_NIF_TERM ref);
+
+ErlNifResourceType* enif_open_resource_type_x(ErlNifEnv*, const char* name_str, const ErlNifResourceTypeInit*, ErlNifResourceFlags flags, ErlNifResourceFlags* tried);
+
+int  enif_monitor_process(ErlNifEnv*,void* obj,const ErlNifPid*,ErlNifMonitor *monitor);
+
+int  enif_demonitor_process(ErlNifEnv*,void* obj,const ErlNifMonitor *monitor);
+
+int  enif_compare_monitors(const ErlNifMonitor*,const ErlNifMonitor*);
+
+ErlNifUInt64 enif_hash(ErlNifHash type, ERL_NIF_TERM term, ErlNifUInt64 salt);
+
+int  enif_whereis_pid (ErlNifEnv *env, ERL_NIF_TERM name, ErlNifPid *pid);
+
+int  enif_whereis_port (ErlNifEnv *env, ERL_NIF_TERM name, ErlNifPort *port);
+
+ErlNifIOQueue * enif_ioq_create(ErlNifIOQueueOpts opts);
+
+void enif_ioq_destroy(ErlNifIOQueue *q);
+
+int enif_ioq_enq_binary(ErlNifIOQueue *q, ErlNifBinary *bin, size_t skip);
+
+int enif_ioq_enqv(ErlNifIOQueue *q, ErlNifIOVec *iov, size_t skip);
+
+size_t enif_ioq_size(ErlNifIOQueue *q);
+
+int enif_ioq_deq(ErlNifIOQueue *q, size_t count, size_t *size);
+
+SysIOVec* enif_ioq_peek(ErlNifIOQueue *q, int *iovlen);
+
+int enif_inspect_iovec(ErlNifEnv *env, size_t max_length, ERL_NIF_TERM iovec_term, ERL_NIF_TERM *tail, ErlNifIOVec **iovec);
+
+void enif_free_iovec(ErlNifIOVec *iov);
+
+int enif_ioq_peek_head(ErlNifEnv *env, ErlNifIOQueue *q, size_t *size, ERL_NIF_TERM *head);
+
+char* enif_mutex_name(ErlNifMutex*);
+
+char* enif_cond_name(ErlNifCond*);
+
+char* enif_rwlock_name(ErlNifRWLock*);
+
+char* enif_thread_name(ErlNifTid);
+
+int enif_vfprintf(FILE*, const char *fmt, va_list);
+
+int enif_vsnprintf(char*, size_t, const char *fmt, va_list);
+
+int enif_make_map_from_arrays(ErlNifEnv *env, ERL_NIF_TERM keys[], ERL_NIF_TERM values[], size_t cnt, ERL_NIF_TERM *map_out);
+
+int enif_select_x(ErlNifEnv* env, ErlNifEvent e, enum ErlNifSelectFlags flags, void* obj, const ErlNifPid* pid, ERL_NIF_TERM msg, ErlNifEnv* msg_env);
+
+ERL_NIF_TERM enif_make_monitor_term(ErlNifEnv* env, const ErlNifMonitor*);
+
+void enif_set_pid_undefined(ErlNifPid* pid);
+
+int enif_is_pid_undefined(const ErlNifPid* pid);
+
+ErlNifTermType enif_term_type(ErlNifEnv* env, ERL_NIF_TERM term);
+
+static ERL_NIF_TERM enif_make_tuple1(ErlNifEnv* env, ERL_NIF_TERM e1);
+
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple2(ErlNifEnv* env, ERL_NIF_TERM e1,ERL_NIF_TERM e2);
+
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple3(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple4(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple5(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4,
+						    ERL_NIF_TERM e5);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple6(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4,
+						    ERL_NIF_TERM e5,
+						    ERL_NIF_TERM e6);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple7(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4,
+						    ERL_NIF_TERM e5,
+						    ERL_NIF_TERM e6,
+						    ERL_NIF_TERM e7);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple8(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4,
+						    ERL_NIF_TERM e5,
+						    ERL_NIF_TERM e6,
+						    ERL_NIF_TERM e7,
+						    ERL_NIF_TERM e8);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_tuple9(ErlNifEnv* env,
+						    ERL_NIF_TERM e1,
+						    ERL_NIF_TERM e2,
+						    ERL_NIF_TERM e3,
+						    ERL_NIF_TERM e4,
+						    ERL_NIF_TERM e5,
+						    ERL_NIF_TERM e6,
+						    ERL_NIF_TERM e7,
+						    ERL_NIF_TERM e8,
+						    ERL_NIF_TERM e9);
+						    
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list1(ErlNifEnv* env,
+						   ERL_NIF_TERM e1);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list2(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list3(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list4(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list5(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4,
+						   ERL_NIF_TERM e5);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list6(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4,
+						   ERL_NIF_TERM e5,
+						   ERL_NIF_TERM e6);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list7(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4,
+						   ERL_NIF_TERM e5,
+						   ERL_NIF_TERM e6,
+						   ERL_NIF_TERM e7);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list8(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4,
+						   ERL_NIF_TERM e5,
+						   ERL_NIF_TERM e6,
+						   ERL_NIF_TERM e7,
+						   ERL_NIF_TERM e8);
+						   
+static ERL_NIF_INLINE ERL_NIF_TERM enif_make_list9(ErlNifEnv* env,
+						   ERL_NIF_TERM e1,
+						   ERL_NIF_TERM e2,
+						   ERL_NIF_TERM e3,
+						   ERL_NIF_TERM e4,
+						   ERL_NIF_TERM e5,
+						   ERL_NIF_TERM e6,
+						   ERL_NIF_TERM e7,
+						   ERL_NIF_TERM e8,
