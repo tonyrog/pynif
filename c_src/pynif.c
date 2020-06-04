@@ -1362,24 +1362,30 @@ static size_t encode_ulong(unsigned char* ptr, unsigned long v)
 static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 {
     if (Integer_Check(term)) {
-	long value = Integer_AsLong(term);
+	long value;
+	if (PyLong_Check(term)) {
+	    size_t nbits = _PyLong_NumBits(term);
+	    if (nbits >= 31) {
+		size_t nbytes = (nbits + 7) / 8;
+		if (nbytes < 256)
+		    return 1+1+1+nbytes;  // small size(1),sign,bignum
+		else
+		    return 1+4+1+nbytes;  // large size(4),sign,bignum
+	    }
+	}
+	value = Integer_AsLong(term);
 	if ((value >= 0) && (value <= 0xff))
 	    return 1+1;  // small_integer (uint8)
-	else if ((value >= -0x80000000) && (value <= 0x7ffffff))
+	else if ((value >= -2147483648) && (value <= 2147483647))	
 	    return 1+4;  // integer (int32)
 	else // encode as bignum
 	    return 1+1+1+4; // size,sign,byte*4
     }
-    else if (PyLong_Check(term)) {
-	size_t nbytes = (_PyLong_NumBits(term) + 7) / 8;
-	// size,sign,byte*4
-	return 1+1+1+nbytes;
-    }    
     else if (PyBool_Check(term)) {
 	if (term == Py_True)
 	    return 1+1+4;  // (small atom)+length+4
 	else
-	    return 1+1+5;  // (small atom)+length+5
+	    return 1+1+5;  // (large atom)+length+5
     }
     else if (PyFloat_Check(term)) {
 	return 1+8;  // NEW_FLOAT
@@ -1692,7 +1698,39 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 {
     if (Integer_Check(term)) {
-	long value = Integer_AsLong(term);
+	long value;
+	if (PyLong_Check(term)) {
+	    size_t nbits = _PyLong_NumBits(term);
+	    DBG("encode_term: PyLong NumBitssize=%ld\n", nbits);
+	    if (nbits >= 31) { // as bignum
+		size_t nbytes = (nbits + 7) / 8;
+		int sign = _PyLong_Sign(term);
+		ssize_t n = 0;
+		// FIXME: this is not correct
+		if (nbytes < 256) {
+		    DBG("encode_term: SMALL_BIG nbytes=%ld\n", nbytes);
+		    *ptr++ = SMALL_BIG;
+		    put_uint8(ptr, nbytes);
+		    ptr += 1;
+		    *ptr++ = sign;
+		    n += 3;
+		}
+		else {
+		    DBG("encode_term: LARGE_BIG nbytes=%ld\n", nbytes);
+		    *ptr++ = LARGE_BIG;
+		    put_uint32(ptr, nbytes);
+		    ptr += 4;
+		    *ptr++ = sign;
+		    n += 6;
+		}
+		_PyLong_AsByteArray((PyLongObject*)term, ptr, nbytes, 1, 1);
+		if (sign) // FIXME!
+		    negate_bytes(ptr, nbytes, ptr);
+		return n + nbytes;
+	    }
+	}
+	value = Integer_AsLong(term);
+	DBG("encode_term: value = %ld\n", value);
 	if ((value >= 0) && (value <= 0xff)) {
 	    if (size < 2) return -1;
 	    DBG("encode_term: SMALL_INTEGER %ld\n", value);
@@ -1700,7 +1738,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    put_uint8(ptr+1, value);
 	    return 1+1;
 	}
-	else if ((value >= -0x80000000) && (value <= 0x7ffffff)) {
+	else if ((value >= -2147483648) && (value <= 2147483647)) {
 	    if (size < 5) return -1;
 	    DBG("encode_term: INTEGER %ld\n", value);
 	    ptr[0] = INTEGER;
