@@ -1563,7 +1563,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[5]);
 	if (ptr[5]) { // sign, negate bytes
 	    unsigned char digits[blen+1];
-	    blen = negate_bytes(ptr, blen, digits);
+	    blen = negate_bytes(ptr+6, blen, digits);
 	    if ((*term = _PyLong_FromByteArray(digits, blen, 1, 1)) == NULL)
 		return 0;
 	}	
@@ -1704,7 +1704,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    DBG("encode_term: PyLong NumBitssize=%ld\n", nbits);
 	    if (nbits >= 31) { // as bignum
 		size_t nbytes = (nbits + 7) / 8;
-		int sign = _PyLong_Sign(term);
+		int sign = (_PyLong_Sign(term) != 0);
 		ssize_t n = 0;
 		// FIXME: this is not correct
 		if (nbytes < 256) {
@@ -1723,7 +1723,12 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 		    *ptr++ = sign;
 		    n += 6;
 		}
-		_PyLong_AsByteArray((PyLongObject*)term, ptr, nbytes, 1, 1);
+		// AsByteArray is a bit buggy? nbytes+1 is required to be
+		// able to convert 0x80000000 like numbers, I hope that
+		// the the ptr[nbytes] byte is not used!!!
+		if (_PyLong_AsByteArray((PyLongObject*)term, ptr, nbytes+1,
+					1, sign) < 0)
+		    return 0;
 		if (sign) // FIXME!
 		    negate_bytes(ptr, nbytes, ptr);
 		return n + nbytes;
