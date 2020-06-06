@@ -7,11 +7,13 @@
 # PYTHON = python2
 # PYTHON_VERSION = 2.7
 
-PYTHON = python3
-PYTHON_VERSION = 3.8
+# PYTHON = python3
+# PYTHON_VERSION = 3.8
+
+PYTHON_INCLUDE = $(shell python3-config --includes)
 
 CC = gcc
-CC_FLAGS = -fPIC -I/usr/include/python$(PYTHON_VERSION) -Wall -Wextra -Wno-unused-parameter -O2 -g
+CC_FLAGS = -fPIC $(PYTHON_INCLUDE) -Wall -Wextra -Wno-unused-parameter -O2 -g
 LD_FLAGS = -shared
 
 # File names
