@@ -7,6 +7,21 @@
 
 #include "erl_nif.h"
 
+// Dirty optional since 2.7 and mandatory since 2.12
+#if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
+#ifdef USE_DIRTY_SCHEDULER
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(0)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#endif
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#endif
+
+
 static ERL_NIF_TERM info(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM hello(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM goodbye(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
@@ -14,12 +29,12 @@ static ERL_NIF_TERM echo(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM reverse(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 
 ErlNifFunc demo_funcs[] = {
-    { "info",    0, info    },
-    { "hello",   1, hello   },
-    { "goodbye", 1, goodbye },
-    { "hello",   2, hello   },
-    { "echo",    1, echo    },
-    { "reverse", 1, reverse }
+    NIF_FUNC( "info",    0, info    ),
+    NIF_FUNC( "hello",   1, hello   ),
+    NIF_FUNC( "goodbye", 1, goodbye ),
+    NIF_FUNC( "hello",   2, hello   ),
+    NIF_FUNC( "echo",    1, echo    ),
+    NIF_FUNC( "reverse", 1, reverse )
 };
 
 static ERL_NIF_TERM info(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])

@@ -54,6 +54,20 @@ typedef struct _rectangle_t
     Dimension dim;
 } Rectangle;
 
+// Dirty optional since 2.7 and mandatory since 2.12
+#if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
+#ifdef USE_DIRTY_SCHEDULER
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(0)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#endif
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#endif
+
 
 static ERL_NIF_TERM add(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM get(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
@@ -63,10 +77,10 @@ static ERL_NIF_TERM new_rectangle(ErlNifEnv* env,int argc,
 				  const ERL_NIF_TERM argv[]);
 
 ErlNifFunc demo3_funcs[] = {
-    { "new_point",     2, new_point },
-    { "new_rectangle", 4, new_rectangle },
-    { "add",           2, add     },
-    { "get",           1, get     },
+    NIF_FUNC( "new_point",     2, new_point ),
+    NIF_FUNC( "new_rectangle", 4, new_rectangle ),
+    NIF_FUNC( "add",           2, add     ),
+    NIF_FUNC( "get",           1, get     ),
 };
 
 static void point_dtor(ErlNifEnv* env, Point* p)

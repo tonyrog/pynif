@@ -35,11 +35,26 @@ DECL_ATOM(undefined);
 DECL_ATOM(true);
 DECL_ATOM(false);
 
+// Dirty optional since 2.7 and mandatory since 2.12
+#if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
+#ifdef USE_DIRTY_SCHEDULER
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr),(0)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr),(ERL_NIF_DIRTY_JOB_CPU_BOUND)}
+#endif
+#else
+#define NIF_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
+#endif
+
+
 static ERL_NIF_TERM next(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 
 ErlNifFunc demo2_funcs[] = {
-    { "next",    1, next    },
-    { "next",    2, next    },
+    NIF_FUNC( "next",    1, next    ),
+    NIF_FUNC( "next",    2, next    ),
 };
 
 static ERL_NIF_TERM next(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
