@@ -11,21 +11,20 @@ PYTHON = python3
 PYTHON_VERSION = 3.8
 
 CC = gcc
-# CC_FLAGS = -fPIC -I/usr/include/python$(PYTHON_VERSION) -Wall -Wextra -Wno-unused-parameter -O2 -g
 CC_FLAGS = -fPIC -I/usr/include/python$(PYTHON_VERSION) -Wall -Wextra -Wno-unused-parameter -O2 -g
 LD_FLAGS = -shared
 
 # File names
 
 # Main target
-all: nifpy.so demopy.so demo2py.so demo3py.so demo3dy.so
+all: nif.so demopy.so demo2py.so demo3py.so demo3dy.so
 
-# nifpy.so
-nifpy.so: nif_pynif.o
-	$(CC) $(LD_FLAGS) -o $@ nif_pynif.o nif_nif.o 
+# nif.so
+nif.so: nif.o
+	$(CC) $(LD_FLAGS) -o $@ nif.o nif_nif.o 
 
-nif_pynif.o:	pynif.c
-	$(CC) $(CC_FLAGS) -o$@ -DPYNIFNAME=nifpy -c $<
+nif.o:	pynif.c
+	$(CC) $(CC_FLAGS) -o$@ -DPYNIFNAME=nif -c $<
 
 # demopy.so
 demopy.so: demo_pynif.o

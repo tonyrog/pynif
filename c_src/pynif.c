@@ -44,6 +44,7 @@ static inline const char* py_string_as_string_and_size(PyObject* obj,
 #define String_FromString(s) PyString_FromString((s))
 #define String_FromStringAndSize(s,n) PyString_FromStringAndSize((s),(n))
 #define String_Size(s) PyString_Size((s))
+#define String_Resize(x,len) PyString_Resize((x),(len))
 #define String_AsString(x) PyString_AsString((x))
 #define String_AsStringAndSize(x,lenp) py_string_as_string_and_size((x),(lenp))
 #else
@@ -51,6 +52,7 @@ static inline const char* py_string_as_string_and_size(PyObject* obj,
 #define String_FromString(s) PyUnicode_FromString((s))
 #define String_FromStringAndSize(s,n) PyUnicode_FromStringAndSize((s),(n))
 #define String_Size(s) PyUnicode_GetLength((s))
+#define String_Resize(x,len) PyUnicode_Resize(&(x),(len))
 #define String_AsString(x) ((char*)PyUnicode_AsUTF8((x)))
 #define String_AsStringAndSize(x,lenp) PyUnicode_AsUTF8AndSize((x),(lenp))
 #endif
@@ -86,6 +88,21 @@ static PyObject* Integer_FromUnsignedLong(unsigned long u)
     return PyLong_FromUnsignedLong(u);
 #endif    
 }
+
+#if 0
+// Put and object on the to autodispose list
+static void autodispose(ErlNifEnv* env, PyObject* obj)
+{
+    PyObject* list;
+    if ((list = env->autodispose_list) == NULL)
+	list = env->autodispose_list = PyList_New(0);
+    if (list != NULL) {
+	DBG("append %p to autodispose\r\n", obj);
+	PyList_Append(list, obj);  // Append add a REF
+	Py_DECREF(obj);	           // Clear it
+    }
+}
+#endif
 
 int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 {
@@ -744,7 +761,44 @@ ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM hd, ERL_NIF_TERM t
 	return enif_make_tuple2(env, hd, tl);
     }
 }
+//
+// PyNIF special like get_tuple but for list
+//
+int enif_get_list(ErlNifEnv* env, ERL_NIF_TERM list,
+		  unsigned int* lenp, ERL_NIF_TERM* elem)
+{
+    if (!PyList_Check(list)) {
+	int len = PyList_Size(list);
+	if (elem == NULL) {  // only length requested
+	    *lenp = len;
+	    return 1;
+	}
+	else if ((int)*lenp < len) // does not fit!
+	    return 0;
+	else {
+	    int i;
+	    for (i = 0; i < (int)len; i++)
+		elem[i] = PyList_GetItem(list, i);
+	    *lenp = len;
+	    return 1;
+	}
+    }
+    return 0;
+}
 
+
+//
+// ENV
+//
+
+static void purge_autodispose_list(ErlNifEnv* env)
+{
+    PyObject* list;
+    if ((list = env->autodispose_list) != NULL) {
+	Py_DECREF(list);  // So that all objects are disposed
+	env->autodispose_list = NULL;
+    }
+}
 
 ErlNifEnv* enif_alloc_env(void)
 {
@@ -755,9 +809,8 @@ ErlNifEnv* enif_alloc_env(void)
 
 void enif_clear_env(ErlNifEnv* env)
 {
-    memset(env, 0, sizeof(ErlNifEnv));
+    purge_autodispose_list(env);
 }
-
 
 unsigned char* enif_make_new_binary(ErlNifEnv* env,size_t size,
 				    ERL_NIF_TERM* termp)
@@ -853,6 +906,11 @@ void* enif_realloc(void* ptr, size_t size)
 // BINARY
 //
 
+int enif_is_binary(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    UNUSED(env);
+    return PyByteArray_Check(term);
+}
 
 int enif_alloc_binary(size_t size, ErlNifBinary* bin)
 {
@@ -863,18 +921,41 @@ int enif_alloc_binary(size_t size, ErlNifBinary* bin)
 	bin->size = size;
 	bin->data = (unsigned char*) PyByteArray_AS_STRING(obj);
 	bin->ref_bin = obj;
+	bin->mutable = 1;
 	return 1;
     }
     return 0;
 }
 
+int enif_realloc_binary(ErlNifBinary* bin, size_t size)
+{
+    if (bin->mutable) {
+	if (PyByteArray_Check(bin->ref_bin)) {
+	    if (PyByteArray_Resize(bin->ref_bin, size) < 0)
+		return 0;
+	    bin->size = size;
+	    bin->data = (unsigned char*) PyByteArray_AS_STRING(bin->ref_bin);
+	    return 1;
+	}
+	return 0;
+    }
+    else { // make a mutable copy
+	PyObject* obj = PyByteArray_FromStringAndSize((char*)bin->data,
+						      bin->size);
+	if (PyByteArray_Resize(obj, size) < 0)
+	    return 0;
+	bin->size = size;
+	bin->data = (unsigned char*) PyByteArray_AS_STRING(obj);
+	bin->ref_bin = obj;
+	bin->mutable = 1;
+	return 1;
+    }
+}
+
 void enif_release_binary(ErlNifBinary* bin)
 {
-    if (bin->ref_bin)
+    if (bin->mutable)
 	Py_DECREF((PyObject*) bin->ref_bin);
-    bin->data = NULL;
-    bin->size = 0;
-    bin->ref_bin = NULL;	
 }
 
 static ssize_t iolist_size(ERL_NIF_TERM term)
@@ -959,6 +1040,7 @@ int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
 	bin->size = PyByteArray_Size(bin_term);
 	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
 	bin->ref_bin = bin_term;
+	bin->mutable = 0;
 	return 1;
     }
     return 0;
@@ -971,25 +1053,19 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 	bin->size = PyByteArray_Size(term);
 	bin->data = (unsigned char*) PyByteArray_AsString(term);
 	bin->ref_bin = term;
+	bin->mutable = 0;
 	return 1;	
-    }
-    else if (String_Check(term)) {
-	bin->size = String_Size(term);
-	bin->data = (unsigned char*) String_AsString(term);
-	bin->ref_bin = term;
-	return 1;
     }
     else {
 	ssize_t size;
-	
 	if ((size = iolist_size(term)) < 0)
 	    return 0;
+	DBG("iolist_size = %ld\r\n", size);
 	if (!enif_alloc_binary(size, bin))
 	    return 0;
-	if (iolist_copy(term, bin->data, size) != size) {
-	    // fixme dealloc?
+	// autodispose(env, bin->ref_bin);
+	if (iolist_copy(term, bin->data, size) != size)
 	    return 0;
-	}
 	return 1;
     }
     return 0;
@@ -998,12 +1074,13 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 ERL_NIF_TERM enif_make_binary(ErlNifEnv* env, ErlNifBinary* bin)
 {
     UNUSED(env);
-    if (bin->ref_bin) {
-	Py_INCREF((PyObject*) bin->ref_bin);
+    if (bin->mutable) {
+	bin->mutable = 0;
 	return (PyObject*) bin->ref_bin;
     }
     else {
-	return PyByteArray_FromStringAndSize((const char*)bin->data, bin->size);
+	Py_INCREF((PyObject*) bin->ref_bin);
+	return (PyObject*) bin->ref_bin;
     }
 }
 
@@ -1361,7 +1438,13 @@ static size_t encode_ulong(unsigned char* ptr, unsigned long v)
 // calculate number of bytes to represent term as binary
 static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 {
-    if (Integer_Check(term)) {
+    if (PyBool_Check(term)) {
+	if (term == Py_True)
+	    return 1+1+4;  // (small atom)+length+4
+	else
+	    return 1+1+5;  // (large atom)+length+5
+    }
+    else if (Integer_Check(term)) {
 	long value;
 	if (PyLong_Check(term)) {
 	    size_t nbits = _PyLong_NumBits(term);
@@ -1380,12 +1463,6 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 	    return 1+4;  // integer (int32)
 	else // encode as bignum
 	    return 1+1+1+4; // size,sign,byte*4
-    }
-    else if (PyBool_Check(term)) {
-	if (term == Py_True)
-	    return 1+1+4;  // (small atom)+length+4
-	else
-	    return 1+1+5;  // (large atom)+length+5
     }
     else if (PyFloat_Check(term)) {
 	return 1+8;  // NEW_FLOAT
@@ -1505,6 +1582,16 @@ static size_t decode_seq(unsigned char* ptr, size_t len,
     return blen;
 }
 
+static size_t decode_atom(unsigned char* ptr, size_t len, PyObject** term)
+{
+    if ((len == 4) && (memcmp(ptr, "true", 4) == 0))
+	*term = Py_True;
+    else if ((len = 5) && (memcmp(ptr, "false", 5) == 0))
+	*term = Py_False;
+    else
+	*term = String_FromStringAndSize((char*)ptr, len);
+    return len;
+}
 
 static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 {
@@ -1516,33 +1603,49 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	if ((*term = PyList_New(0)) == NULL)
 	    return 0;
 	return 1;
-    case SMALL_ATOM:
-	return 0; // FIXME
-    case ATOM:
-	return 0; // FIXME	
+    case SMALL_ATOM: {
+	size_t blen;
+	if (len < 2) return 0;
+	blen = get_uint8(ptr+1);
+	if (len < 2+blen) return 0;
+	if (decode_atom(ptr+2, blen, term) != blen)
+	    return 0;
+	return 2+blen;
+    }
+    case ATOM: {
+	size_t blen;
+	if (len < 3) return 0;
+	blen = get_uint16(ptr+1);
+	if (len < 3+blen) return 0;
+	if (decode_atom(ptr+3, blen, term) != blen)
+	    return 0;
+	return 3+blen;
+    }
     case BINARY: {
 	size_t blen;
 	if (len < 5) return 0;
 	blen = get_uint32(ptr+1);
+	if (len < 5+blen) return 0;
 	DBG("decode_term: binary size=%ld\n", blen);
 	if ((*term = PyByteArray_FromStringAndSize((const char*)ptr+5, blen)) == NULL)
 	    return 0;
-	return 1+4+blen;
+	return 5+blen;
     }
     case SMALL_INTEGER:
 	if (len < 2) return 0;
 	if ((*term = Integer_FromLong(get_uint8(ptr+1))) == NULL)
 	    return 0;
-	return 1+1;
+	return 2;
     case INTEGER:
 	if (len < 5) return 0;
 	if ((*term = Integer_FromLong(get_int32(ptr+1))) == NULL)
 	    return 0;
-	return 1+4;
+	return 5;
     case SMALL_BIG: { // t,n0,s,d0,d1,...dn-1
 	size_t blen;
 	if (len < 3) return 0;
 	blen = get_uint8(ptr+1);
+	if (len < 3+blen) return 0;
 	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[2]);
 	if (ptr[2]) { // sign, negate bytes
 	    unsigned char digits[blen+1];
@@ -1554,12 +1657,13 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    if ((*term = _PyLong_FromByteArray(ptr+3, blen, 1, 0)) == NULL)
 		return 0;
 	}
-	return 1+1+1+blen;
+	return 3+blen;
     }
     case LARGE_BIG: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
 	size_t blen;
 	if (len < 6) return 0;
 	blen = get_uint32(ptr+1);
+	if (len < 6+blen) return 0;
 	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[5]);
 	if (ptr[5]) { // sign, negate bytes
 	    unsigned char digits[blen+1];
@@ -1571,8 +1675,8 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    if ((*term = _PyLong_FromByteArray(ptr+6, blen, 1, 0)) == NULL)
 		return 0;
 	}
-	return 1+4+1+blen;
-    }	
+	return 6+blen;
+    }
     case FLOAT: {  // t,string(31)
 	PyObject* string = String_FromStringAndSize((const char*)ptr+1, 31);
 	if ((*term = Float_FromString(string)) == NULL)
@@ -1597,10 +1701,11 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	size_t blen;
 	if (len < 3) return 0;
 	blen = get_uint16(ptr+1);
+	if (len < 3+blen) return 0;
 	DBG("decode_term: string length=%ld\n", blen);
 	if ((*term = String_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
 	    return 0;
-	return 1+2+blen;
+	return 3+blen;
     }
     case LIST: {
 	size_t n;
@@ -1697,7 +1802,25 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 
 ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 {
-    if (Integer_Check(term)) {
+    if (PyBool_Check(term)) {
+	if (term == Py_True) {
+	    if (size < 6) return -1;
+	    DBG("encode_term: SMALL_ATOM %d true\n", 4);
+	    ptr[0]=SMALL_ATOM;
+	    ptr[1]=4;
+	    ptr[2]='t'; ptr[3]='r'; ptr[4]='u'; ptr[5]='e';
+	    return 1+1+4;  // (small atom)+length+4
+	}
+	else {
+	    if (size < 7) return -1;
+	    DBG("encode_term: SMALL_ATOM %d false\n", 5);
+	    ptr[0]=SMALL_ATOM;
+	    ptr[1]=5;
+	    ptr[2]='f'; ptr[3]='a'; ptr[4]='l'; ptr[5]='s'; ptr[6]='e';
+	    return 1+1+5;  // (small atom)+length+5
+	}
+    }
+    else if (Integer_Check(term)) {
 	long value;
 	if (PyLong_Check(term)) {
 	    size_t nbits = _PyLong_NumBits(term);
@@ -1773,24 +1896,6 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    }
 	}
     }
-    else if (PyBool_Check(term)) {
-	if (term == Py_True) {
-	    if (size < 6) return -1;
-	    DBG("encode_term: SMALL_ATOM %d true\n", 4);
-	    ptr[0]=SMALL_ATOM;
-	    ptr[1]=4;
-	    ptr[2]='t'; ptr[3]='r'; ptr[4]='u'; ptr[5]='e';
-	    return 1+1+4;  // (small atom)+length+4
-	}
-	else {
-	    if (size < 7) return -1;
-	    DBG("encode_term: SMALL_ATOM %d false\n", 5);
-	    ptr[0]=SMALL_ATOM;
-	    ptr[1]=5;
-	    ptr[2]='f'; ptr[3]='a'; ptr[4]='l'; ptr[5]='s'; ptr[6]='e';
-	    return 1+1+5;  // (small atom)+length+5
-	}
-    }
     else if (PyFloat_Check(term)) {
 	if (size < 9) return -1;
 	DBG("encode_term: NEW_FLOAT %d\n", 8);
@@ -1809,7 +1914,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    ptr[0] = STRING;
 	    put_uint16(ptr+1, len);
 	    memcpy(ptr+3, str, len);
-	    return 1+2+len;  // STRING encode
+	    return 3+len;  // STRING encode
 	}
 	else {
 	    int n = (int)len;
@@ -1963,10 +2068,14 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
     
     nif_env.self = self;
 
+    // FIXME: remove this loop!
     for (i = fun_start[j]; i < fun_end[j]; i++) {
 	if (nif_ari[i] == argc) {
 	    int k = nif_fun[i];
-	    return (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
+	    PyObject* r;
+	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
+	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
+	    return r;
 	}
     }
     PyErr_SetString(PyExc_TypeError, "badarity");
@@ -2125,9 +2234,6 @@ PyMODINIT_FUNC MODNAME(void)
     
     nif_entry = nif_init();
 
-//  fprintf(stderr, "nif_entry: name = %s\n", nif_entry->name);
-//  fprintf(stderr, "nif_entry: num_of_funcs = %d\n", nif_entry->num_of_funcs);
-
     if (nif_entry->num_of_funcs > MAX_PYNIF_FUNCS) {
 	fprintf(stderr, "sorry to many functions limit is %d \r\n",
 		MAX_PYNIF_FUNCS);
@@ -2206,6 +2312,7 @@ PyMODINIT_FUNC MODNAME(void)
     nif_env.atom_table[1] = Py_True;
 
     nif_env.atom_index = 2;
+    nif_env.autodispose_list = NULL;
     
     nif_env.module = m;
     nif_env.self   = m;

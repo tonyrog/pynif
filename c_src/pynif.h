@@ -54,6 +54,7 @@ typedef struct enif_env_t
     size_t atom_table_size; // number of allocated items in atom_table
     PyObject** atom_table;  // array: atom_index => bool|string_object
     size_t atom_index;
+    PyObject* autodispose_list; // list: of objects to remove
 } ErlNifEnv;
 
 #define INITIAL_ATOM_TABLE_SIZE 1024
@@ -108,7 +109,8 @@ typedef struct
 {
     size_t size;
     unsigned char* data;
-    void* ref_bin;
+    PyObject* ref_bin;
+    int mutable;
     /* for future additions to be ABI compatible (same struct size) */
     void* __spare__[2];
 } ErlNifBinary;

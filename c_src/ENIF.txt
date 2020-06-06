@@ -7,7 +7,7 @@ OK void enif_free(void* ptr);
 
 OK int enif_is_atom(ErlNifEnv*, ERL_NIF_TERM term);
 
-# int enif_is_binary(ErlNifEnv*, ERL_NIF_TERM term);
+OK int enif_is_binary(ErlNifEnv*, ERL_NIF_TERM term);
 
 # int enif_is_ref(ErlNifEnv*, ERL_NIF_TERM term);
 
