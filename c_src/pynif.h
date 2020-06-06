@@ -21,29 +21,36 @@ typedef Py_tss_t ErlNifTSDKey;
 typedef int ErlNifTSDKey;
 #endif
 
+#define SMALL_INTEGER_EXT 'a'
+#define INTEGER_EXT       'b'
+#define FLOAT_EXT         'c'
+#define ATOM_EXT          'd'
+#define SMALL_ATOM_EXT    's'
+#define REFERENCE_EXT     'e'
+#define NEW_REFERENCE_EXT 'r'
+#define NEWER_REFERENCE_EXT 'Z'
+#define PORT_EXT          'f'
+#define NEW_PORT_EXT      'Y'
+#define NEW_FLOAT_EXT     'F'
+#define PID_EXT           'g'
+#define NEW_PID_EXT       'X'
+#define SMALL_TUPLE_EXT   'h'
+#define LARGE_TUPLE_EXT   'i'
+#define NIL_EXT           'j'
+#define STRING_EXT        'k'
+#define LIST_EXT          'l'
+#define BINARY_EXT        'm'
+#define BIT_BINARY_EXT    'M'
+#define SMALL_BIG_EXT     'n'
+#define LARGE_BIG_EXT     'o'
+#define NEW_FUN_EXT       'p'
+#define EXPORT_EXT        'q'
+#define MAP_EXT           't'
+#define FUN_EXT           'u'
+#define ATOM_UTF8_EXT     'v'
+#define SMALL_ATOM_UTF8_EXT 'w'
 
-typedef enum erl_ext_tag_t {
-    MAGIC = 131,
-    SMALL_ATOM = 115,
-    ATOM = 100,
-    BINARY = 109,
-    SMALL_INTEGER = 97,
-    INTEGER = 98,
-    SMALL_BIG = 110,
-    LARGE_BIG = 111,
-    FLOAT = 99,
-    NEW_FLOAT = 70,
-    REFERENCE = 101,
-    NEW_REFERENCE = 114,
-    NEWER_REFERENCE = 90,
-    STRING = 107,
-    LIST = 108,
-    SMALL_TUPLE = 104,
-    LARGE_TUPLE = 105,
-    NIL = 106,
-    MAP = 116
-} ErlExtTag;
-
+#define VERSION_MAGIC 131
 
 typedef struct enif_env_t
 {

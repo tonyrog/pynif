@@ -163,7 +163,7 @@ ERL_NIF_TERM enif_make_ulong(ErlNifEnv* env, unsigned long u)
     return Integer_FromUnsignedLong(u);
 }
 
-int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, uint* ip)
+int enif_get_uint(ErlNifEnv* env, ERL_NIF_TERM term, unsigned int* ip)
 {
     unsigned long value;
     if (!enif_get_ulong(env, term, &value))
@@ -1060,7 +1060,7 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 	ssize_t size;
 	if ((size = iolist_size(term)) < 0)
 	    return 0;
-	DBG("iolist_size = %ld\r\n", size);
+	DBG("iolist_size = %ld\r\n", (long)size);
 	if (!enif_alloc_binary(size, bin))
 	    return 0;
 	// autodispose(env, bin->ref_bin);
@@ -1270,8 +1270,6 @@ ErlNifResourceType* enif_open_resource_type_x(
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
 	enif_fprintf(stderr, "PyType_Ready failed\n");
     }
-    // enif_fprintf(stderr, "ob_size = %ld\r\n", rtp->tp.ob_size);
-
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
     return (ErlNifResourceType*)rtp;    
@@ -1335,28 +1333,28 @@ size_t enif_sizeof_resource(void* obj)
     return Py_SIZE(ptr);
 }
 
-static char* format_ext_tag(ErlExtTag tag)
+static char* format_ext_tag(int tag)
 {
     switch(tag) {
-    case MAGIC: return "MAGIC";
-    case SMALL_ATOM: return "SMALL_ATOM";
-    case ATOM: return "ATOM";
-    case BINARY: return "BINARY";
-    case SMALL_INTEGER: return "SMALL_INTEGER";
-    case INTEGER: return "INTEGER";
-    case SMALL_BIG: return "SMALL_BIG";
-    case LARGE_BIG: return "LARGE_BIG";
-    case FLOAT: return "FLOAT";
-    case NEW_FLOAT: return "NEW_FLOAT";
-    case REFERENCE: return "REFERENCE";
-    case NEW_REFERENCE: return "NEW_REFERENCE";
-    case NEWER_REFERENCE: return "NEWER_REFERENCE";
-    case STRING: return "STRING";
-    case LIST: return "LIST";
-    case SMALL_TUPLE: return "SMALL_TUPLE";
-    case LARGE_TUPLE: return "LARGE_TUPLE";
-    case NIL: return "NIL";
-    case MAP: return "MAP";
+    case VERSION_MAGIC: return "MAGIC";
+    case SMALL_ATOM_EXT: return "SMALL_ATOM";
+    case ATOM_EXT: return "ATOM";
+    case BINARY_EXT: return "BINARY";
+    case SMALL_INTEGER_EXT: return "SMALL_INTEGER";
+    case INTEGER_EXT: return "INTEGER";
+    case SMALL_BIG_EXT: return "SMALL_BIG";
+    case LARGE_BIG_EXT: return "LARGE_BIG";
+    case FLOAT_EXT: return "FLOAT";
+    case NEW_FLOAT_EXT: return "NEW_FLOAT";
+    case REFERENCE_EXT: return "REFERENCE";
+    case NEW_REFERENCE_EXT: return "NEW_REFERENCE";
+    case NEWER_REFERENCE_EXT: return "NEWER_REFERENCE";
+    case STRING_EXT: return "STRING";
+    case LIST_EXT: return "LIST";
+    case SMALL_TUPLE_EXT: return "SMALL_TUPLE";
+    case LARGE_TUPLE_EXT: return "LARGE_TUPLE";
+    case NIL_EXT: return "NIL";
+    case MAP_EXT: return "MAP";
     default: return "UNSUPPORTED";
     }
 }
@@ -1599,11 +1597,11 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	return 0;
     DBG("decode_term: tag=%s\n", format_ext_tag(ptr[0]));
     switch(ptr[0]) {
-    case NIL:
+    case NIL_EXT:
 	if ((*term = PyList_New(0)) == NULL)
 	    return 0;
 	return 1;
-    case SMALL_ATOM: {
+    case SMALL_ATOM_EXT: {
 	size_t blen;
 	if (len < 2) return 0;
 	blen = get_uint8(ptr+1);
@@ -1612,7 +1610,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 0;
 	return 2+blen;
     }
-    case ATOM: {
+    case ATOM_EXT: {
 	size_t blen;
 	if (len < 3) return 0;
 	blen = get_uint16(ptr+1);
@@ -1621,32 +1619,32 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 0;
 	return 3+blen;
     }
-    case BINARY: {
+    case BINARY_EXT: {
 	size_t blen;
 	if (len < 5) return 0;
 	blen = get_uint32(ptr+1);
 	if (len < 5+blen) return 0;
-	DBG("decode_term: binary size=%ld\n", blen);
+	DBG("decode_term: binary size=%ld\n", (long)blen);
 	if ((*term = PyByteArray_FromStringAndSize((const char*)ptr+5, blen)) == NULL)
 	    return 0;
 	return 5+blen;
     }
-    case SMALL_INTEGER:
+    case SMALL_INTEGER_EXT:
 	if (len < 2) return 0;
 	if ((*term = Integer_FromLong(get_uint8(ptr+1))) == NULL)
 	    return 0;
 	return 2;
-    case INTEGER:
+    case INTEGER_EXT:
 	if (len < 5) return 0;
 	if ((*term = Integer_FromLong(get_int32(ptr+1))) == NULL)
 	    return 0;
 	return 5;
-    case SMALL_BIG: { // t,n0,s,d0,d1,...dn-1
+    case SMALL_BIG_EXT: { // t,n0,s,d0,d1,...dn-1
 	size_t blen;
 	if (len < 3) return 0;
 	blen = get_uint8(ptr+1);
 	if (len < 3+blen) return 0;
-	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[2]);
+	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[2]);
 	if (ptr[2]) { // sign, negate bytes
 	    unsigned char digits[blen+1];
 	    blen = negate_bytes(ptr+3, blen, digits);
@@ -1659,12 +1657,12 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	}
 	return 3+blen;
     }
-    case LARGE_BIG: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
+    case LARGE_BIG_EXT: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
 	size_t blen;
 	if (len < 6) return 0;
 	blen = get_uint32(ptr+1);
 	if (len < 6+blen) return 0;
-	DBG("decode_term: #digits=%ld, sign=%d\n", blen, ptr[5]);
+	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[5]);
 	if (ptr[5]) { // sign, negate bytes
 	    unsigned char digits[blen+1];
 	    blen = negate_bytes(ptr+6, blen, digits);
@@ -1677,13 +1675,13 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	}
 	return 6+blen;
     }
-    case FLOAT: {  // t,string(31)
+    case FLOAT_EXT: {  // t,string(31)
 	PyObject* string = String_FromStringAndSize((const char*)ptr+1, 31);
 	if ((*term = Float_FromString(string)) == NULL)
 	    return 0;
 	return 32;
     }
-    case NEW_FLOAT: { // t,f7,f6,f5,f4,f3,f2,f1,f0
+    case NEW_FLOAT_EXT: { // t,f7,f6,f5,f4,f3,f2,f1,f0
 	double d;
 	if (len < 9) return 0;
 	d = _PyFloat_Unpack8(ptr+1, 0);
@@ -1691,27 +1689,27 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 0;
 	return 1+8;
     }
-    case REFERENCE:
+    case REFERENCE_EXT:
 	return 0; // FIXME
-    case NEW_REFERENCE:
+    case NEW_REFERENCE_EXT:
 	return 0; // FIXME
-    case NEWER_REFERENCE:
+    case NEWER_REFERENCE_EXT:
 	return 0; // FIXME
-    case STRING: {
+    case STRING_EXT: {
 	size_t blen;
 	if (len < 3) return 0;
 	blen = get_uint16(ptr+1);
 	if (len < 3+blen) return 0;
-	DBG("decode_term: string length=%ld\n", blen);
+	DBG("decode_term: string length=%ld\n", (long)blen);
 	if ((*term = String_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
 	    return 0;
 	return 3+blen;
     }
-    case LIST: {
+    case LIST_EXT: {
 	size_t n;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
-	DBG("decode_term: list length=%ld\n", n);
+	DBG("decode_term: list length=%ld\n", (long)n);
 	{
 	    PyObject* list;
 	    PyObject* seq[n];
@@ -1722,7 +1720,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 		return 0;
 	    if (len-5-slen < 1)
 		return 0;
-	    if (ptr[5+slen] != NIL)
+	    if (ptr[5+slen] != NIL_EXT)
 		return 0;
 	    if ((list = PyList_New(n)) == NULL)
 		return 0;
@@ -1732,11 +1730,11 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 5+slen+1;
 	}
     }
-    case SMALL_TUPLE: {
+    case SMALL_TUPLE_EXT: {
 	size_t n;
 	if (len < 2) return 0;
 	n = get_uint8(ptr+1);
-	DBG("decode_term: tuple length=%ld\n", n);
+	DBG("decode_term: tuple length=%ld\n", (long)n);
 	{
 	    PyObject* tuple;
 	    PyObject* seq[n];
@@ -1753,11 +1751,11 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 2+slen;
 	}
     }
-    case LARGE_TUPLE: {
+    case LARGE_TUPLE_EXT: {
 	size_t n;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
-	DBG("decode_term: tuple length=%ld\n", n);
+	DBG("decode_term: tuple length=%ld\n",(long)n);
 	{
 	    PyObject* tuple;
 	    PyObject* seq[n];
@@ -1774,11 +1772,11 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    return 2+slen;
 	}
     }
-    case MAP: {
+    case MAP_EXT: {
 	size_t n;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
-	DBG("decode_term: map length=%ld\n", n);
+	DBG("decode_term: map length=%ld\n",(long)n);
 	{
 	    PyObject* dict;
 	    PyObject* seq[2*n];
@@ -1806,7 +1804,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	if (term == Py_True) {
 	    if (size < 6) return -1;
 	    DBG("encode_term: SMALL_ATOM %d true\n", 4);
-	    ptr[0]=SMALL_ATOM;
+	    ptr[0]=SMALL_ATOM_EXT;
 	    ptr[1]=4;
 	    ptr[2]='t'; ptr[3]='r'; ptr[4]='u'; ptr[5]='e';
 	    return 1+1+4;  // (small atom)+length+4
@@ -1814,7 +1812,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	else {
 	    if (size < 7) return -1;
 	    DBG("encode_term: SMALL_ATOM %d false\n", 5);
-	    ptr[0]=SMALL_ATOM;
+	    ptr[0]=SMALL_ATOM_EXT;
 	    ptr[1]=5;
 	    ptr[2]='f'; ptr[3]='a'; ptr[4]='l'; ptr[5]='s'; ptr[6]='e';
 	    return 1+1+5;  // (small atom)+length+5
@@ -1824,23 +1822,23 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	long value;
 	if (PyLong_Check(term)) {
 	    size_t nbits = _PyLong_NumBits(term);
-	    DBG("encode_term: PyLong NumBitssize=%ld\n", nbits);
+	    DBG("encode_term: PyLong NumBitssize=%ld\n", (long)nbits);
 	    if (nbits >= 31) { // as bignum
 		size_t nbytes = (nbits + 7) / 8;
 		int sign = (_PyLong_Sign(term) != 0);
 		ssize_t n = 0;
 		// FIXME: this is not correct
 		if (nbytes < 256) {
-		    DBG("encode_term: SMALL_BIG nbytes=%ld\n", nbytes);
-		    *ptr++ = SMALL_BIG;
+		    DBG("encode_term: SMALL_BIG nbytes=%ld\n", (long)nbytes);
+		    *ptr++ = SMALL_BIG_EXT;
 		    put_uint8(ptr, nbytes);
 		    ptr += 1;
 		    *ptr++ = sign;
 		    n += 3;
 		}
 		else {
-		    DBG("encode_term: LARGE_BIG nbytes=%ld\n", nbytes);
-		    *ptr++ = LARGE_BIG;
+		    DBG("encode_term: LARGE_BIG nbytes=%ld\n", (long)nbytes);
+		    *ptr++ = LARGE_BIG_EXT;
 		    put_uint32(ptr, nbytes);
 		    ptr += 4;
 		    *ptr++ = sign;
@@ -1858,18 +1856,18 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    }
 	}
 	value = Integer_AsLong(term);
-	DBG("encode_term: value = %ld\n", value);
+	DBG("encode_term: value = %ld\n", (long)value);
 	if ((value >= 0) && (value <= 0xff)) {
 	    if (size < 2) return -1;
-	    DBG("encode_term: SMALL_INTEGER %ld\n", value);
-	    ptr[0] = SMALL_INTEGER;
+	    DBG("encode_term: SMALL_INTEGER %ld\n", (long)value);
+	    ptr[0] = SMALL_INTEGER_EXT;
 	    put_uint8(ptr+1, value);
 	    return 1+1;
 	}
 	else if ((value >= -2147483648) && (value <= 2147483647)) {
 	    if (size < 5) return -1;
-	    DBG("encode_term: INTEGER %ld\n", value);
-	    ptr[0] = INTEGER;
+	    DBG("encode_term: INTEGER %ld\n", (long)value);
+	    ptr[0] = INTEGER_EXT;
 	    put_int32(ptr+1, value);
 	    return 1+4;
 	}
@@ -1877,8 +1875,8 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    if (value < 0) {
 		ssize_t len = bytesize_of_ulong(-value);
 		if (size < len+3) return -1;
-		DBG("encode_term: SMALL_BIG size=%ld\n", len);
-		ptr[0] = SMALL_BIG;
+		DBG("encode_term: SMALL_BIG size=%ld\n", (long)len);
+		ptr[0] = SMALL_BIG_EXT;
 		ptr[1] = len;
 		ptr[2] = 1;
 		encode_ulong(ptr+3, -value);
@@ -1887,8 +1885,8 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    else {
 		ssize_t len = bytesize_of_ulong(value);
 		if (size < len+3) return -1;
-		DBG("encode_term: SMALL_BIG size=%ld\n", len);
-		ptr[0] = SMALL_BIG;
+		DBG("encode_term: SMALL_BIG size=%ld\n", (long)len);
+		ptr[0] = SMALL_BIG_EXT;
 		ptr[1] = len;
 		ptr[2] = 0;
 		encode_ulong(ptr+3, value);
@@ -1899,7 +1897,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
     else if (PyFloat_Check(term)) {
 	if (size < 9) return -1;
 	DBG("encode_term: NEW_FLOAT %d\n", 8);
-	ptr[0] = NEW_FLOAT;
+	ptr[0] = NEW_FLOAT_EXT;
 	_PyFloat_Pack8(PyFloat_AsDouble(term), ptr+1, 0);
 	return 1+8;  // NEW_FLOAT
     }
@@ -1910,8 +1908,8 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    return 0;
 	if (len <= 0xffff) {
 	    if (size < 3+len) return -1;
-	    DBG("encode_term: STRING length=%ld\n", len);
-	    ptr[0] = STRING;
+	    DBG("encode_term: STRING length=%ld\n", (long)len);
+	    ptr[0] = STRING_EXT;
 	    put_uint16(ptr+1, len);
 	    memcpy(ptr+3, str, len);
 	    return 3+len;  // STRING encode
@@ -1919,15 +1917,15 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	else {
 	    int n = (int)len;
 	    if (size < 5+2*len+1) return -1;
-	    DBG("encode_term: LIST length=%ld\n", len);
-	    ptr[0] = LIST;
+	    DBG("encode_term: LIST length=%ld\n", (long)len);
+	    ptr[0] = LIST_EXT;
 	    put_uint32(ptr+1, len);
 	    ptr += 5;
 	    while(n--) {
-		*ptr++ = SMALL_INTEGER;
+		*ptr++ = SMALL_INTEGER_EXT;
 		*ptr++ = *str++;
 	    }
-	    *ptr = NIL;
+	    *ptr = NIL_EXT;
 	    return 1+4+2*len + 1; // LIST encode (with terminating nil)!
 	}
     }
@@ -1936,8 +1934,8 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	ssize_t bsize = 1+4+1;  // and the terminating NIL
 	int i;
 	if (size < 6) return -1;
-	DBG("encode_term: LIST length=%ld\n", len);
-	ptr[0] = LIST;
+	DBG("encode_term: LIST length=%ld\n", (long)len);
+	ptr[0] = LIST_EXT;
 	put_uint32(ptr+1, len);
 	ptr += 5;
 	size -= 5;
@@ -1949,7 +1947,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	    size -= size1;
 	    bsize += size1;
 	}
-	*ptr = NIL;
+	*ptr = NIL_EXT;
 	return bsize;
     }
     else if (PyTuple_Check(term)) {
@@ -1958,18 +1956,18 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	int i;
 	if (len <= 0xff) {
 	    if (size < 2) return -1;
-	    DBG("encode_term: SMALL_TUPLE size=%ld\n", len);
+	    DBG("encode_term: SMALL_TUPLE size=%ld\n", (long)len);
 	    bsize = 1+1;
-	    ptr[0] = SMALL_TUPLE;
+	    ptr[0] = SMALL_TUPLE_EXT;
 	    put_uint8(ptr+1, len);
 	    ptr += 2;
 	    size -= 2;
 	}
 	else {
 	    if (size < 5) return -1;
-	    DBG("encode_term: LARGE_TUPLE size=%ld\n", len);
+	    DBG("encode_term: LARGE_TUPLE size=%ld\n", (long)len);
 	    bsize = 1+4;
-	    ptr[0] = LARGE_TUPLE;
+	    ptr[0] = LARGE_TUPLE_EXT;
 	    put_uint32(ptr+1, len);
 	    ptr += 5;
 	    size -= 5;
@@ -1992,9 +1990,9 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	ssize_t bsize = 1+4;  // tag + length
 
 	if (size < 5) return -1;
-	DBG("encode_term: MAP #entries=%ld\n", len);
+	DBG("encode_term: MAP #entries=%ld\n", (long)len);
 	bsize = 1+4;
-	ptr[0] = MAP;
+	ptr[0] = MAP_EXT;
 	put_uint32(ptr+1, len);
 	ptr += 5;
 	size -= 5;	
@@ -2022,14 +2020,14 @@ int enif_term_to_binary(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin)
     ssize_t size;
     if ((size = bytesize_of_term(term)) <= 0)
 	return 0;
-    DBG("term_to_binary: size=%ld\n", size);
+    DBG("term_to_binary: size=%ld\n", (long)size);
     if (!enif_alloc_binary(size+1, bin))
 	return 0;
     if (encode_term(term, bin->data+1, size) <= 0) {
 	enif_release_binary(bin);
 	return 0;
     }
-    bin->data[0] = MAGIC;
+    bin->data[0] = VERSION_MAGIC;
     return 1;
 }
 
@@ -2038,11 +2036,11 @@ size_t enif_binary_to_term(ErlNifEnv *env, const unsigned char* data,
 {
     unsigned char* ptr = (unsigned char*) data;
     size_t size;
-    if (ptr[0] != MAGIC)
+    if (ptr[0] != VERSION_MAGIC)
 	return 0;
     if ((size = decode_term(ptr+1, sz-1, term)) == 0)
 	return 0;
-    DBG("binary_to_term: size=%ld\n", size);
+    DBG("binary_to_term: size=%ld\n", (long)size);
     return size+1;
 }
 
