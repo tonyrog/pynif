@@ -13,7 +13,7 @@ typedef struct _erl_nif_mutex ErlNifMutex;
 typedef struct _erl_nif_rwlock ErlNifRWLock;
 typedef PyTypeObject ErlNifResourceType;
 
-#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>7))
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=7))
 #define USE_TSS_KEY 1
 typedef Py_tss_t ErlNifTSDKey;
 #else
