@@ -11,6 +11,7 @@
 #else
 #include <windows.h>
 #endif
+#include <limits.h>
 
 #ifndef PYNIFNAME
 #error "must define PYNIFNAME to module name"
@@ -388,6 +389,7 @@ ERL_NIF_TERM enif_make_string(ErlNifEnv* env, const char* string, ErlNifCharEnco
 
 int enif_get_string(ErlNifEnv* env, ERL_NIF_TERM list, char* buf, unsigned len, ErlNifCharEncoding coding)
 {
+    UNUSED(env);
     if (String_Check(list)) {
 	return get_string(list, buf, len, coding);
     }
@@ -420,6 +422,7 @@ int enif_get_string(ErlNifEnv* env, ERL_NIF_TERM list, char* buf, unsigned len, 
 //
 ERL_NIF_TERM enif_make_badarg(ErlNifEnv* env)
 {
+    UNUSED(env);
     PyErr_SetString(PyExc_TypeError, "badarg");
     return NULL; // fixme?
 }
@@ -437,6 +440,7 @@ int enif_is_tuple(ErlNifEnv* env, ERL_NIF_TERM term)
 int enif_get_tuple(ErlNifEnv* env, ERL_NIF_TERM tpl, int* arity,
 		   const ERL_NIF_TERM** array)
 {
+    UNUSED(env);
     if (PyTuple_Check(tpl)) {
 	*arity = PyTuple_Size(tpl);
 	// 3.8 does not expose the array!!! fixme!!!
@@ -596,6 +600,7 @@ int enif_get_list_length(ErlNifEnv* env, ERL_NIF_TERM term, unsigned* len)
 
 int enif_is_empty_list(ErlNifEnv* env, ERL_NIF_TERM term)
 {
+    UNUSED(env);  
     if (!PyList_Check(term))
 	return 0;
     return PyList_Size(term) == 0;
@@ -733,6 +738,7 @@ ERL_NIF_TERM enif_make_list9(ErlNifEnv* env,
 int enif_get_list_cell(ErlNifEnv* env, ERL_NIF_TERM term,
 		       ERL_NIF_TERM* head, ERL_NIF_TERM* tail)
 {
+    UNUSED(env);
     if (PyList_Check(term)) {
 	Py_ssize_t length = PyList_Size(term);
 	if (length > 0) {
@@ -767,14 +773,17 @@ ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM hd, ERL_NIF_TERM t
 int enif_get_list(ErlNifEnv* env, ERL_NIF_TERM list,
 		  unsigned int* lenp, ERL_NIF_TERM* elem)
 {
-    if (!PyList_Check(list)) {
+    UNUSED(env);
+    if (PyList_Check(list)) {
 	int len = PyList_Size(list);
 	if (elem == NULL) {  // only length requested
 	    *lenp = len;
 	    return 1;
 	}
-	else if ((int)*lenp < len) // does not fit!
+	else if ((int)*lenp < len) { // does not fit!
+	    *lenp = len;  // but report length
 	    return 0;
+	}
 	else {
 	    int i;
 	    for (i = 0; i < (int)len; i++)
@@ -783,6 +792,7 @@ int enif_get_list(ErlNifEnv* env, ERL_NIF_TERM list,
 	    return 1;
 	}
     }
+    *lenp = 0;
     return 0;
 }
 
@@ -815,6 +825,7 @@ void enif_clear_env(ErlNifEnv* env)
 unsigned char* enif_make_new_binary(ErlNifEnv* env,size_t size,
 				    ERL_NIF_TERM* termp)
 {
+    UNUSED(env);
     PyObject* obj = PyByteArray_FromStringAndSize("", 0);
     if (PyByteArray_Resize(obj, size) < 0)
 	return NULL;
@@ -824,12 +835,18 @@ unsigned char* enif_make_new_binary(ErlNifEnv* env,size_t size,
 
 int enif_compare_monitors(const ErlNifMonitor* a, const ErlNifMonitor* b)
 {
+    UNUSED(a);
+    UNUSED(b);
     return 0;
 }
 
 int enif_monitor_process(ErlNifEnv* env, void* obj, const ErlNifPid* pid,
 			 ErlNifMonitor *monitor)
 {
+    UNUSED(env);
+    UNUSED(obj);
+    UNUSED(pid);
+    UNUSED(monitor);  
     return 0;
 }
 
@@ -845,6 +862,10 @@ ERL_NIF_TERM enif_raise_exception(ErlNifEnv *env, ERL_NIF_TERM reason)
 // FIXME: put msg into a message box under the module object (key on thread?)
 int enif_send(ErlNifEnv* env, const ErlNifPid* to_pid, ErlNifEnv* msg_env, ERL_NIF_TERM msg)
 {
+    UNUSED(env);
+    UNUSED(to_pid);
+    UNUSED(msg_env);
+    UNUSED(msg);
     return 0;
 }
 
@@ -854,7 +875,6 @@ ErlNifPid* enif_self(ErlNifEnv* caller_env, ErlNifPid* pid)
     pid->thread_ident = PyThread_get_thread_ident();
     return pid;
 }
-
 
 //
 // MAP
@@ -1033,9 +1053,10 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 }
 
 
-int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
+int enif_inspect_binary(ErlNifEnv* env, ERL_NIF_TERM bin_term,
 			ErlNifBinary* bin)
 {
+    UNUSED(env);
     if (PyByteArray_Check(bin_term)) {
 	bin->size = PyByteArray_Size(bin_term);
 	bin->data = (unsigned char *) PyByteArray_AsString(bin_term);
@@ -1049,6 +1070,7 @@ int enif_inspect_binary(ErlNifEnv* end, ERL_NIF_TERM bin_term,
 int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 				  ErlNifBinary* bin)
 {
+    UNUSED(env);
     if (PyByteArray_Check(term)) {
 	bin->size = PyByteArray_Size(term);
 	bin->data = (unsigned char*) PyByteArray_AsString(term);
@@ -1254,7 +1276,8 @@ ErlNifResourceType* enif_open_resource_type_x(
     ErlNifResourceFlags* tried)
 {
     ResourceType* rtp = enif_alloc(sizeof(ResourceType));
-
+    UNUSED(env);  // FIXME store all reource types in environment?
+    
     memset(rtp, 0, sizeof(ResourceType));
 
     Py_SIZE(rtp) = 1; // ->tp.ob_size = 1;  // for dtor
@@ -1285,6 +1308,7 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
 {
     ResourceType* rtp = enif_alloc(sizeof(ResourceType));
     ErlNifResourceTypeInit init;
+    UNUSED(module_str);
     memset(rtp, 0, sizeof(ResourceType));
     memset(&init, 0, sizeof(ErlNifResourceTypeInit));
     init.dtor = dtor;
@@ -1320,6 +1344,7 @@ ERL_NIF_TERM enif_make_resource(ErlNifEnv* env, void* obj)
 int enif_get_resource(ErlNifEnv* env, ERL_NIF_TERM term,
 		      ErlNifResourceType* type, void** objp)
 {
+    UNUSED(env);
     if (term && (term->ob_type == type)) {
 	*objp = RESOURCE_TO_OBJ(term);
 	return 1;
@@ -2018,6 +2043,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 int enif_term_to_binary(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin)
 {
     ssize_t size;
+    UNUSED(env);
     if ((size = bytesize_of_term(term)) <= 0)
 	return 0;
     DBG("term_to_binary: size=%ld\n", (long)size);
@@ -2036,6 +2062,7 @@ size_t enif_binary_to_term(ErlNifEnv *env, const unsigned char* data,
 {
     unsigned char* ptr = (unsigned char*) data;
     size_t size;
+    UNUSED(env);
     if (ptr[0] != VERSION_MAGIC)
 	return 0;
     if ((size = decode_term(ptr+1, sz-1, term)) == 0)

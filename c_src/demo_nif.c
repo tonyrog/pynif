@@ -21,6 +21,7 @@
 #define NIF_DIRTY_FUNC(name,arity,fptr) {(name),(arity),(fptr)}
 #endif
 
+#define UNUSED(var) (void)var
 
 static ERL_NIF_TERM info(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
 static ERL_NIF_TERM hello(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[]);
@@ -39,6 +40,8 @@ ErlNifFunc demo_funcs[] = {
 
 static ERL_NIF_TERM info(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
+    UNUSED(argc);
+    UNUSED(argv);
     printf("info: demo funcs=%p\r\n", demo_funcs);
     printf("info: info=%p\r\n", demo_funcs[0].fptr);
     printf("info: env=%p\r\n", env);
@@ -85,6 +88,8 @@ static ERL_NIF_TERM goodbye(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 
 static ERL_NIF_TERM echo(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
+    UNUSED(env);
+    UNUSED(argc);
     return argv[0];
 }
 
@@ -98,6 +103,7 @@ static ERL_NIF_TERM reverse(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
     ERL_NIF_TERM list = argv[0];
     ERL_NIF_TERM res = make_nil(env);
     ERL_NIF_TERM hd, tl;
+    UNUSED(argc);    
 
     while(enif_get_list_cell(env, list, &hd, &tl)) {
 	res = enif_make_list_cell(env, hd, res);

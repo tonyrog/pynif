@@ -15,7 +15,7 @@ ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir
 ERL_C_INCLUDE_DIR := "$(ERLDIR)/usr/include"
 
 CC = gcc
-CC_FLAGS = -fPIC $(PYTHON_INCLUDE) -Wall -Wextra -Wno-unused-parameter -O2 -g
+CC_FLAGS = -fno-common $(PYTHON_INCLUDE) -Wall -Wextra -Wno-unused-parameter -O2 -g
 LD_FLAGS = -shared
 
 # File names
