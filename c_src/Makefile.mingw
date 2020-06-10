@@ -15,10 +15,7 @@ ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir
 ERL_C_INCLUDE_DIR := "$(ERLDIR)/usr/include"
 
 CC = gcc
-CFLAGS += -O3
-CFLAGS += -D__WIN32__ -DWIN32 -D_MT -D_DLL -DEBUG_MEM -DDLOG_DEFAULT=DLOG_NONE
-CFLAGS += -Wall -Wextra -Wswitch-default -Wswitch-enum -D_THREAD_SAFE -D_REENTRANT -fno-common
-CFLAGS += $(PYTHON_INCLUDE) -I$(ERL_C_INCLUDE_DIR)
+CFLAGS = -fPIC -fno-common $(PYTHON_INCLUDE) -Wall -Wextra -Wno-unused-parameter -O2 -D__WIN32__ -DWIN32
 
 LD_SHARED	:= $(CC) -shared
 LIBS = -lkernel32 -luser32 -ladvapi32
