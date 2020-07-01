@@ -2583,7 +2583,15 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
     PyObject** argv = ((PyTupleObject *)(args))->ob_item;
     int argc = PyTuple_Size(args);
     int i;
-    
+
+    fprintf(stderr, "pynif_call func=%d: fun_start=%d, fun_end=%d ",
+	    j, fun_start[j], fun_end[j]);
+    for (i = 0; i < argc; i++) {
+	fprintf(stderr, "argument %d:", i);
+	enif_print(stderr, argv[i]);
+	fprintf(stderr, "\n");
+    }
+	
     nif_env.self = self;
 
     // FIXME: remove this loop!
@@ -2591,7 +2599,14 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 	if (nif_ari[i] == argc) {
 	    int k = nif_fun[i];
 	    PyObject* r;
+	    fprintf(stderr, "  NIF call %s/%d k=%d\r\n",
+		    nif_entry->funcs[k].name,
+		    nif_entry->funcs[k].arity,
+		    k);
 	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
+	    fprintf(stderr, "  NIF result: ");
+	    enif_print(stderr, r);
+	    fprintf(stderr, "\r\n");
 	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
 	    return r;
 	}

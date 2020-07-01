@@ -42,14 +42,15 @@ static ERL_NIF_TERM info(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
     UNUSED(argc);
     UNUSED(argv);
-    printf("info: demo funcs=%p\r\n", demo_funcs);
-    printf("info: info=%p\r\n", demo_funcs[0].fptr);
-    printf("info: env=%p\r\n", env);
+    enif_fprintf(stdout, "info: demo funcs=%p\r\n", demo_funcs);
+    enif_fprintf(stdout, "info: info=%p\r\n", demo_funcs[0].fptr);
+    enif_fprintf(stdout, "info: env=%p\r\n", env);
     return enif_make_int(env, 0);
 }
 
 static ERL_NIF_TERM hello(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
+    enif_fprintf(stderr, "hello argc=%d\r\n", argc);
     if (argc == 1) {
 	long l;
 	if (enif_get_long(env, argv[0], &l))
@@ -67,6 +68,7 @@ static ERL_NIF_TERM hello(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 
 static ERL_NIF_TERM goodbye(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
+    enif_fprintf(stderr, "goodbye argc=%d\r\n", argc);
     if (enif_is_atom(env, argv[0])) {
 	char string[256];
 	int i, j, len;
@@ -90,6 +92,7 @@ static ERL_NIF_TERM echo(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
 {
     UNUSED(env);
     UNUSED(argc);
+    enif_fprintf(stderr, "echo argc=%d\r\n", argc);    
     return argv[0];
 }
 
@@ -103,7 +106,9 @@ static ERL_NIF_TERM reverse(ErlNifEnv* env,int argc,const ERL_NIF_TERM argv[])
     ERL_NIF_TERM list = argv[0];
     ERL_NIF_TERM res = make_nil(env);
     ERL_NIF_TERM hd, tl;
-    UNUSED(argc);    
+    UNUSED(argc);
+
+    enif_fprintf(stderr, "reverse argc=%d\r\n", argc);
 
     while(enif_get_list_cell(env, list, &hd, &tl)) {
 	res = enif_make_list_cell(env, hd, res);
