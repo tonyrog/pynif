@@ -12,6 +12,7 @@
 #include <windows.h>
 #endif
 #include <limits.h>
+#include <stddef.h>
 
 #ifndef PYNIFNAME
 #error "must define PYNIFNAME to module name"
@@ -90,7 +91,6 @@ static PyObject* Integer_FromUnsignedLong(unsigned long u)
 #endif    
 }
 
-#if 0
 // Put and object on the to autodispose list
 static void autodispose(ErlNifEnv* env, PyObject* obj)
 {
@@ -98,12 +98,11 @@ static void autodispose(ErlNifEnv* env, PyObject* obj)
     if ((list = env->autodispose_list) == NULL)
 	list = env->autodispose_list = PyList_New(0);
     if (list != NULL) {
-	DBG("append %p to autodispose\r\n", obj);
 	PyList_Append(list, obj);  // Append add a REF
-	Py_DECREF(obj);	           // Clear it
+	Py_DecRef(obj);
+	DBG("append %p to autodispose refcount=%ld\r\n", obj, Py_REFCNT(obj));
     }
 }
-#endif
 
 int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 {
@@ -232,14 +231,14 @@ static int  make_atom(ErlNifEnv* env, const char* name, int existing,
 	    env->atom_table = tab;
 	    env->atom_table_size = new_size;
 	}
-	if (PyModule_Check(env->self))
-	    PyModule_AddIntConstant(env->self, name, env->atom_index);
 	atm = Integer_FromLong(env->atom_index);
+	if (PyModule_Check(env->self))
+	    PyModule_AddObject(env->self, name, atm);
 	obj = String_FromString(name);
 	env->atom_table[env->atom_index++] = obj;
 	PyDict_SetItemString(env->atoms, name, atm);
 	*atomp = atm;
-	return 1;	
+	return 1;
     }
     *atomp = atm;
     return 1;
@@ -280,6 +279,60 @@ static int get_string(PyObject* string, char* buf, unsigned len,
 	return str_len+1;
     }
     return 0;
+}
+
+int enif_is_boolean(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    if (PyBool_Check(term))
+	return 1;
+    else if (Integer_Check(term)) {
+	long i = Integer_AsLong(term);
+	if ((i == 0) || (i == 1))
+	    return 1;
+    }
+    return 0;
+}
+
+int enif_is_true(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    if (term == Py_True) return 1;
+    else if (Integer_Check(term) && (Integer_AsLong(term) == 1))
+	return 1;
+    return 0;
+}
+
+int enif_is_false(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    if (term == Py_False) return 1;
+    else if (Integer_Check(term) && (Integer_AsLong(term) == 0))
+	return 1;
+    return 0;
+}
+
+int enif_get_boolean(ErlNifEnv* env, ERL_NIF_TERM term, int* value)
+{
+    if (PyBool_Check(term)) {
+	if (term == Py_True)
+	    *value = 1;
+	else if (term == Py_False)
+	    *value = 0;
+	else
+	    return 0;
+	return 1;
+    }
+    else if (Integer_Check(term)) {
+	long i = Integer_AsLong(term);
+	if ((i == 0) || (i == 1)) {
+	    *value = i;
+	    return 1;
+	}
+    }
+    return 0;
+}
+
+ERL_NIF_TERM enif_make_boolean(ErlNifEnv* env, int value)
+{
+    return value ? Py_True : Py_False;
 }
 
 int enif_get_atom(ErlNifEnv* env, ERL_NIF_TERM atom, char* buf, unsigned len,
@@ -457,8 +510,11 @@ ERL_NIF_TERM enif_make_tuple_from_array(ErlNifEnv* env,
     ERL_NIF_TERM tuple = PyTuple_New(cnt);
     unsigned i;
 
-    for (i = 0; i < cnt; i++) 
-	PyTuple_SET_ITEM(tuple, i, arr[i]);
+    for (i = 0; i < cnt; i++) {
+	ERL_NIF_TERM elem = arr[i];
+	Py_INCREF(elem);
+	PyTuple_SET_ITEM(tuple, i, elem);
+    }
     return tuple;
 }
     
@@ -471,7 +527,9 @@ ERL_NIF_TERM enif_make_tuple(ErlNifEnv* env, unsigned cnt, ...)
 
     va_start(ap, cnt);
     while(i < cnt) {
-	PyTuple_SET_ITEM(tuple, i, va_arg(ap, ERL_NIF_TERM));
+	ERL_NIF_TERM elem = va_arg(ap, ERL_NIF_TERM);
+	Py_INCREF(elem);
+	PyTuple_SET_ITEM(tuple, i, elem);
 	i++;
     }
     va_end(ap);    
@@ -615,7 +673,9 @@ ERL_NIF_TERM enif_make_list(ErlNifEnv* env, unsigned cnt, ...)
 
     va_start(ap, cnt);
     while(i < cnt) {
-	PyList_SET_ITEM(list, i, va_arg(ap, ERL_NIF_TERM));
+	ERL_NIF_TERM elem = va_arg(ap, ERL_NIF_TERM);
+	Py_INCREF(elem);
+	PyList_SET_ITEM(list, i, elem);
 	i++;
     }
     va_end(ap);
@@ -629,8 +689,11 @@ ERL_NIF_TERM enif_make_list_from_array(ErlNifEnv* env,
     ERL_NIF_TERM list = PyList_New(cnt);
     unsigned i;
     
-    for (i = 0; i < cnt; i++) 
-	PyList_SET_ITEM(list, i, arr[i]);
+    for (i = 0; i < cnt; i++) {
+	ERL_NIF_TERM elem = arr[i];
+	Py_INCREF(elem);
+	PyList_SET_ITEM(list, i, elem);
+    }
     return list;    
 }
 
@@ -771,31 +834,32 @@ ERL_NIF_TERM enif_make_list_cell(ErlNifEnv* env, ERL_NIF_TERM hd, ERL_NIF_TERM t
 // PyNIF special like get_tuple but for list
 //
 int enif_get_list(ErlNifEnv* env, ERL_NIF_TERM list,
-		  unsigned int* lenp, ERL_NIF_TERM* elem)
+		  int* lenp, ERL_NIF_TERM* elem)
 {
     UNUSED(env);
-    if (PyList_Check(list)) {
+    if (!PyList_Check(list)) {
+	*lenp = -1;
+	return 0;
+    }
+    else {
 	int len = PyList_Size(list);
 	if (elem == NULL) {  // only length requested
 	    *lenp = len;
 	    return 1;
 	}
-	else if ((int)*lenp < len) { // does not fit!
+	else if (*lenp < len) { // does not fit!
 	    *lenp = len;  // but report length
 	    return 0;
 	}
 	else {
 	    int i;
-	    for (i = 0; i < (int)len; i++)
+	    for (i = 0; i < len; i++)
 		elem[i] = PyList_GetItem(list, i);
 	    *lenp = len;
 	    return 1;
 	}
     }
-    *lenp = 0;
-    return 0;
 }
-
 
 //
 // ENV
@@ -805,6 +869,12 @@ static void purge_autodispose_list(ErlNifEnv* env)
 {
     PyObject* list;
     if ((list = env->autodispose_list) != NULL) {
+	int i;
+	ssize_t n = PyList_Size(list);
+	for (i = 0; i < n; i++) {
+	    PyObject* item = PyList_GetItem(list, i);
+	    DBG("purge %p refcount=%ld\r\n", item, Py_REFCNT(item));
+	}
 	Py_DECREF(list);  // So that all objects are disposed
 	env->autodispose_list = NULL;
     }
@@ -886,6 +956,163 @@ int enif_is_map(ErlNifEnv* env, ERL_NIF_TERM term)
     return PyDict_Check(term);
 }
 
+int enif_get_map_size(ErlNifEnv* env, ERL_NIF_TERM term, size_t *size)
+{
+    if (!PyDict_Check(term))
+	return 0;
+    *size = PyDict_Size(term);
+    return 1;
+}
+
+ERL_NIF_TERM enif_make_new_map(ErlNifEnv* env)
+{
+    UNUSED(env);
+    return PyDict_New();
+}
+
+int enif_make_map_put(ErlNifEnv* env, ERL_NIF_TERM map_in,
+		      ERL_NIF_TERM key, ERL_NIF_TERM value,
+		      ERL_NIF_TERM* map_out)
+{
+    PyObject* mp;
+    UNUSED(env);
+    if (!PyDict_Check(map_in))
+	return 0;
+    mp = PyDict_Copy(map_in);
+    PyDict_SetItem(mp, key, value);
+    *map_out = mp;
+    return 1;
+}
+
+int enif_get_map_value(ErlNifEnv* env, ERL_NIF_TERM map,
+		       ERL_NIF_TERM key, ERL_NIF_TERM* value)
+{
+    UNUSED(env);    
+    if (!PyDict_Check(map))
+	return 0;
+    if ((*value = PyDict_GetItem(map, key)) != NULL)
+	return 1;
+    return 0;
+}
+
+int enif_make_map_update(ErlNifEnv* env, ERL_NIF_TERM map_in, ERL_NIF_TERM key, ERL_NIF_TERM value, ERL_NIF_TERM* map_out)
+{
+    PyObject* mp;    
+    UNUSED(env);
+    if (!PyDict_Check(map_in))
+	return 0;
+    if (PyDict_GetItem(map_in, key) != NULL)
+	return 0;
+    mp = PyDict_Copy(map_in);
+    PyDict_SetItem(mp, key, value);
+    *map_out = mp;
+    return 1;
+}
+
+int enif_make_map_remove(ErlNifEnv* env, ERL_NIF_TERM map_in,
+			 ERL_NIF_TERM key, ERL_NIF_TERM* map_out)
+{
+    UNUSED(env);
+    if (!PyDict_Check(map_in))
+	return 0;
+    if (PyDict_GetItem(map_in, key) != NULL) {
+	PyObject* mp = PyDict_Copy(map_in);
+	PyDict_DelItem(mp, key);
+	*map_out = mp;
+	return 1;
+    }
+    else {
+	*map_out = map_in;
+	return 1;
+    }
+}
+
+int enif_map_iterator_create(ErlNifEnv *env, ERL_NIF_TERM map,
+			     ErlNifMapIterator *iter,
+			     ErlNifMapIteratorEntry entry)
+{
+    UNUSED(env);
+    if (!PyDict_Check(map))
+	return 0;
+    if (entry == ERL_NIF_MAP_ITERATOR_FIRST) {
+	iter->dict = map;
+	iter->pos = 0;
+	return 1;
+    }
+    else if (entry == ERL_NIF_MAP_ITERATOR_LAST) {
+	iter->dict = map;
+	iter->pos = PyDict_Size(map)-1;
+	return 1;
+    }
+    return 0;
+}
+
+void enif_map_iterator_destroy(ErlNifEnv *env, ErlNifMapIterator *iter)
+{
+    UNUSED(env);
+    iter->dict = NULL;
+}
+
+int enif_map_iterator_is_head(ErlNifEnv *env, ErlNifMapIterator *iter)
+{
+    UNUSED(env);
+    return (iter->dict != NULL) && (iter->pos == -1);
+}
+
+int enif_map_iterator_is_tail(ErlNifEnv *env, ErlNifMapIterator *iter)
+{
+    UNUSED(env);
+    return (iter->dict != NULL) && (iter->pos == PyDict_Size(iter->dict));
+}
+
+int enif_map_iterator_next(ErlNifEnv *env, ErlNifMapIterator *iter)
+{
+    UNUSED(env);
+    if (iter->dict == NULL)
+	return 0;
+    if (iter->pos >= PyDict_Size(iter->dict))
+	return 0;
+    iter->pos++;
+    return 1;
+}
+
+int enif_map_iterator_prev(ErlNifEnv *env, ErlNifMapIterator *iter)
+{
+    UNUSED(env);
+    if (iter->dict == NULL)
+	return 0;
+    if (iter->pos < 0)
+	return 0;
+    iter->pos--;
+    return 1;
+}
+
+// FIXME: this is n^2!
+// possibly allow for at least NEXT beeing efficent
+int enif_map_iterator_get_pair(ErlNifEnv *env, ErlNifMapIterator *iter,
+			       ERL_NIF_TERM *key, ERL_NIF_TERM *value)
+{
+    Py_ssize_t pos;
+    Py_ssize_t i;
+    UNUSED(env);
+    if (iter->dict == NULL)
+	return 0;
+    pos = 0;
+    i = -1;
+    while (PyDict_Next(iter->dict, &pos, key, value)) {
+	i++;
+	fprintf(stderr, "get_pair %ld (pos=%ld) key=%p (", i, iter->pos, *key);
+	PyObject_Print(*key, stderr, Py_PRINT_RAW);
+	fprintf(stderr, ") value=%p (", *value);
+	PyObject_Print(*value, stderr, Py_PRINT_RAW);
+	fprintf(stderr, ")\r\n");
+	if (i == iter->pos)
+	    return 1;
+    }
+    return 0;
+}
+
+
 int enif_make_map_from_arrays(ErlNifEnv *env, ERL_NIF_TERM keys[], ERL_NIF_TERM values[], size_t cnt, ERL_NIF_TERM *map_out)
 {
     UNUSED(env);
@@ -901,7 +1128,6 @@ int enif_make_map_from_arrays(ErlNifEnv *env, ERL_NIF_TERM keys[], ERL_NIF_TERM 
     *map_out = dict;
     return 1;
 }
-
 
 //
 // MEMORY
@@ -1015,6 +1241,7 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	char* src = PyByteArray_AsString(term);
 	if (slen > dlen) return -1;
 	memcpy(dst, src, slen);
+	DBG("copied %ld bytes from bytearray\r\n", slen);
 	return slen;
     }
     else if (String_Check(term)) {
@@ -1022,6 +1249,7 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	char* src = String_AsString(term);
 	if (slen > dlen) return -1;
 	memcpy(dst, src, slen);
+	DBG("copied %ld bytes from string\r\n", slen);
 	return slen;
     }
     else if (PyList_Check(term)) {
@@ -1085,7 +1313,8 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 	DBG("iolist_size = %ld\r\n", (long)size);
 	if (!enif_alloc_binary(size, bin))
 	    return 0;
-	// autodispose(env, bin->ref_bin);
+	Py_INCREF((PyObject*) bin->ref_bin);
+	autodispose(env, bin->ref_bin);
 	if (iolist_copy(term, bin->data, size) != size)
 	    return 0;
 	return 1;
@@ -1220,7 +1449,22 @@ void* enif_tsd_get(ErlNifTSDKey key)
 #endif
 }
 
+// Format
+int enif_snprintf(char* str, size_t size, const char *format, ...)
+{
+    va_list ap;
+    int r;
+    
+    va_start(ap, format);
+    r = vsnprintf(str, size, format, ap);
+    va_end(ap);
+    return r;
+}
+
+
 // I/O
+
+
 int enif_fprintf(FILE* filep, const char *format, ...)
 {
     va_list ap;
@@ -1249,7 +1493,7 @@ typedef struct _resource_t
 } Resource;
 
 // Erlang (void*) => PyVarObject (Resource)
-#define OBJ_TO_RESOURCE(obj) ((Resource*)(((uint8_t*)obj) - sizeof(Resource)))
+#define OBJ_TO_RESOURCE(obj) ((Resource*)(((uint8_t*)obj) - offsetof(Resource,data)))
 // PyVarObject (Resource*) to Erlang (void*)
 #define RESOURCE_TO_OBJ(ptr) ((void*) &((Resource*)(ptr))->data[0])
 
@@ -1265,8 +1509,22 @@ static void resource_dealloc(PyObject* obj)
     ResourceType* rtp = (ResourceType*) Py_TYPE(ptr); //ptr->ob_type
     DBG("dealloc resource object %s %p\r\n", rtp->tp.tp_name, obj);
     (*rtp->ini.dtor)(ptr->env, RESOURCE_TO_OBJ(ptr));
+    Py_TYPE(obj)->tp_free((PyObject*)ptr);
 }
 
+typedef struct {
+    PyObject_HEAD
+} TemplateObject;
+
+static PyTypeObject TemplateType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "template.Template",
+    .tp_doc = "Template objects",
+    .tp_basicsize = sizeof(TemplateObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+};
 
 ErlNifResourceType* enif_open_resource_type_x(
     ErlNifEnv* env,
@@ -1275,29 +1533,39 @@ ErlNifResourceType* enif_open_resource_type_x(
     ErlNifResourceFlags flags,
     ErlNifResourceFlags* tried)
 {
-    ResourceType* rtp = enif_alloc(sizeof(ResourceType));
+    ResourceType* rtp;
     UNUSED(env);  // FIXME store all reource types in environment?
-    
-    memset(rtp, 0, sizeof(ResourceType));
 
-    Py_SIZE(rtp) = 1; // ->tp.ob_size = 1;  // for dtor
+    fprintf(stderr, "PyType_Type.tp_basicsize = %ld\r\n",
+	    PyType_Type.tp_basicsize);
+    fprintf(stderr, "PyType_Type.tp_itemsize = %ld\r\n",
+	    PyType_Type.tp_itemsize);
+
+    rtp = PyMem_Malloc(sizeof(ResourceType));
+    memcpy(rtp, &TemplateType, sizeof(TemplateType));
+
     rtp->tp.tp_name = name_str;
     rtp->tp.tp_basicsize = sizeof(Resource);
     rtp->tp.tp_itemsize  = 1;  // since it is a byte array (any struture)!
-    rtp->tp.tp_flags = Py_TPFLAGS_DEFAULT;
-    rtp->tp.tp_new = PyType_GenericNew;
     rtp->tp.tp_dealloc = resource_dealloc;
     // store callbacks
     rtp->ini = *init;
 
+    fprintf(stderr, "rtp->tp_basicsize = %ld\r\n",
+	    rtp->tp.tp_basicsize);
+    fprintf(stderr, "rtp->tp_itemsize = %ld\r\n",
+	    rtp->tp.tp_itemsize);
+    
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
 	enif_fprintf(stderr, "PyType_Ready failed\n");
     }
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
-    return (ErlNifResourceType*)rtp;    
-}
 
+    Py_INCREF((PyObject*) rtp);
+    
+    return (ErlNifResourceType*)rtp;
+}
 
 ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
 					    const char* module_str,
@@ -1306,14 +1574,11 @@ ErlNifResourceType* enif_open_resource_type(ErlNifEnv* env,
 					    ErlNifResourceFlags flags,
 					    ErlNifResourceFlags* tried)
 {
-    ResourceType* rtp = enif_alloc(sizeof(ResourceType));
     ErlNifResourceTypeInit init;
     UNUSED(module_str);
-    memset(rtp, 0, sizeof(ResourceType));
     memset(&init, 0, sizeof(ErlNifResourceTypeInit));
     init.dtor = dtor;
-    return enif_open_resource_type_x(env, name_str, &init,
-				     flags, tried);
+    return enif_open_resource_type_x(env, name_str, &init, flags, tried);
 }
 
 void* enif_alloc_resource(ErlNifResourceType* type, size_t size)
@@ -1356,6 +1621,21 @@ size_t enif_sizeof_resource(void* obj)
 {
     Resource* ptr = OBJ_TO_RESOURCE(obj);
     return Py_SIZE(ptr);
+}
+
+int enif_is_ref(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    UNUSED(env);
+    if (Integer_Check(term)) return 0;
+    if (PyBool_Check(term)) return 0;
+    if (PyFloat_Check(term)) return 0;
+    if (String_Check(term)) return 0;
+    if (PyList_Check(term)) return 0;
+    if (PyTuple_Check(term)) return 0;
+    if (PyDict_Check(term)) return 0;
+    if (PyByteArray_Check(term)) return 0;
+    // FIXME: check resource object or real ref
+    return 1;
 }
 
 static char* format_ext_tag(int tag)
@@ -1750,7 +2030,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	    if ((list = PyList_New(n)) == NULL)
 		return 0;
 	    for (i = 0; i < (int)n; i++)
-		PyList_SetItem(list, i, seq[i]);
+		PyList_SET_ITEM(list, i, seq[i]);
 	    *term = list;	    
 	    return 5+slen+1;
 	}
@@ -2072,6 +2352,219 @@ size_t enif_binary_to_term(ErlNifEnv *env, const unsigned char* data,
 }
 
 //
+char* format_long(long value, int base, char* buf, size_t size)
+{
+    char* ptr = buf + size;
+    int sign = (value < 0);
+    static char* digit = "0123456789ABCDEF";
+    
+    if (value < 0)
+	value = -value;
+    *--ptr = '\0';
+    if (value == 0)
+	*--ptr = '0';
+    else {
+	while(value) {
+	    int d = value / base;
+	    value = value % base;
+	    *--ptr = digit[d];
+	}
+    }
+    switch(base) {
+    case 2:  *--ptr = 'b'; *--ptr = '0';  break;
+    case 8:  *--ptr = 'o'; *--ptr = '0';  break;
+    case 16: *--ptr = 'x'; *--ptr = '0';  break;
+    default: break;
+    }
+    if (sign)
+	*--ptr = '-';
+    return ptr;
+}
+
+// calculate number of bytes to represent term as string
+static ssize_t format_term_size(ERL_NIF_TERM term, int base, int ref)
+{
+    ssize_t size = 0;
+    if (PyBool_Check(term)) {
+	if (term == Py_True)
+	    size += 4; // "true"
+	else
+	    size += 5; // "false"
+    }
+    else if (Integer_Check(term)) {
+	if (PyLong_Check(term)) {
+	    PyObject* string = _PyLong_Format(term, base);
+	    size += String_Size(string); 
+	}
+	else {
+	    char buf[16];
+	    char* ptr = format_long(Integer_AsLong(term), base, buf, 16);
+	    size += strlen(ptr);
+	}
+    }
+    else if (PyFloat_Check(term)) {
+	char buf[16];
+	double d = PyFloat_AsDouble(term);
+	sprintf(buf, "%f", d);
+	size += strlen(buf);
+    }
+    else if (String_Check(term)) {
+	size += (String_Size(term)+2);
+    }
+    else if (PyList_Check(term)) { // '['x1','x2...','xn']'
+	ssize_t len = PyList_Size(term);
+	int i;
+	size = size + (len ? 2+len-1 : 2);
+	for (i = 0; i < (int)len; i++)
+	    size += format_term_size(PyList_GetItem(term, i),base,ref);
+    }
+    else if (PyTuple_Check(term)) {  // '('x1','x2','...','xn')'
+	ssize_t len = PyTuple_Size(term);
+	int i;
+	size = size + (len ? 2+len-1 : 2);
+	for (i = 0; i < (int)len; i++)
+	    size += format_term_size(PyTuple_GetItem(term, i),base,ref);
+    }
+    else if (PyDict_Check(term)) {  // '{' k1':'v1','k2':'v2...','kn':'vn'}'
+	ssize_t len = PyDict_Size(term);
+	PyObject* key;
+	PyObject* value;
+	Py_ssize_t pos = 0;
+
+	size = size + (len ? 2+len+len-1 : 2);
+	while(PyDict_Next(term, &pos, &key, &value)) {
+	    size += format_term_size(key, base, ref);
+	    size += format_term_size(value, base, ref);
+	}
+    }
+    else {
+	char buf[16];
+	sprintf(buf, "%p", term);
+	size += strlen(buf);
+    }
+    if (ref) {  // add ref-count like <term>/<count>
+	size += 9;
+    }
+    return size;
+}
+
+// calculate number of bytes to represent term as string
+static char* format_term(ERL_NIF_TERM term, char* ptr, int base, int ref)
+{
+    if (PyBool_Check(term)) {
+	if (term == Py_True) {
+	    memcpy(ptr, "true", 4);
+	    ptr += 4;
+	}
+	else {
+	    memcpy(ptr, "false", 5);
+	    ptr += 5;
+	}
+    }
+    else if (Integer_Check(term)) {
+	if (PyLong_Check(term)) {
+	    PyObject* string = _PyLong_Format(term, base);
+	    size_t len = String_Size(string);
+	    char* str = String_AsString(string);
+	    memcpy(ptr, str, len);
+	    ptr += len;
+	}
+	else {
+	    char buf[16];
+	    char* fptr = format_long(Integer_AsLong(term), base, buf, 16);
+	    int len = strlen(fptr);
+	    memcpy(ptr, fptr, len);
+	    ptr += len;
+	}
+    }
+    else if (PyFloat_Check(term)) {
+	char buf[16];
+	int len;
+	double d = PyFloat_AsDouble(term);
+	sprintf(buf, "%f", d);
+	len = strlen(buf);
+	memcpy(ptr, buf, len);
+	ptr += len;
+    }
+    else if (String_Check(term)) {
+	size_t len = String_Size(term);
+	char* str = String_AsString(term);
+	*ptr++ = '\'';
+	memcpy(ptr, str, len);
+	ptr += len;
+	*ptr++ = '\'';
+    }
+    else if (PyList_Check(term)) { // '['x1','x2...','xn']'
+	ssize_t len = PyList_Size(term);
+	int i;
+	*ptr++ = '[';
+	for (i = 0; i < (int)len; i++) {
+	    ptr = format_term(PyList_GetItem(term, i),ptr,base,ref);
+	    *ptr++ = ',';
+	}
+	if (len) ptr--;
+	*ptr++ = ']';
+    }
+    else if (PyTuple_Check(term)) {  // '('x1','x2','...','xn')'
+	ssize_t len = PyTuple_Size(term);
+	int i;
+	*ptr++ = '(';
+	for (i = 0; i < (int)len; i++) {
+	    ptr = format_term(PyTuple_GetItem(term, i),ptr,base,ref);
+	    *ptr++ = ',';
+	}
+	if (len) ptr--;
+	*ptr++ = ')';
+    }
+    else if (PyDict_Check(term)) {  // '{' k1':'v1','k2':'v2...','kn':'vn'}'
+	ssize_t len = PyDict_Size(term);
+	PyObject* key;
+	PyObject* value;
+	Py_ssize_t pos = 0;
+	*ptr ++= '{';
+	while(PyDict_Next(term, &pos, &key, &value)) {
+	    ptr = format_term(key, ptr, base, ref);
+	    *ptr++ = ':';
+	    ptr = format_term(value, ptr, base, ref);
+	    *ptr++ = ',';
+	}
+	if (len) ptr--;
+	*ptr++ = '}';	
+    }
+    else {
+	char buf[16];
+	int len;
+	sprintf(buf, "%p", term);
+	len = strlen(buf);
+	memcpy(ptr, buf, len);
+	ptr += len;
+    }
+    if (ref) {
+	char buf[16];
+	int len;
+	sprintf(buf, "%ld", Py_REFCNT(term));
+	len = strlen(buf);
+	*ptr++ = '/';
+	memcpy(ptr, buf, len);
+	ptr += len;
+    }
+    return ptr;
+}
+
+int enif_print(FILE* out, ERL_NIF_TERM term)
+{
+    ssize_t len = format_term_size(term, 10, 1);
+    char buf[len+1];
+    char* ptr;
+    
+    ptr = format_term(term, buf, 10, 1);
+    *ptr = '\0';
+    return fprintf(out, "%s", buf);
+//    return PyObject_Print(term, out, Py_PRINT_RAW);
+//
+}
+
+//
 // Modules
 // if STATIC_ERLANG_NIF was set at build time then the init function
 // is call <modname>_nif_init(ERL_NIF_INIT_ARGS)
@@ -2197,6 +2690,12 @@ HMODULE dlopen(const CHAR *DLL, int unused) {
 typedef void * dl_handle_t;
 #endif
 
+void xnif_init()
+{
+    // called from for example varc_nif to initialize nif extensions that
+    // are used to glue erlang/python a bit better
+}
+
 // #ifndef PYNIFFILE
 // extern ErlNifEntry* nif_init(void);
 // #endif
@@ -2212,6 +2711,8 @@ static int is_method_installed(PyMethodDef* methods, size_t num_methods,
     return 0;
 }
 
+static PyMethodDef methods[MAX_PYNIF_FUNCS];
+
 #if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
 #define RETURN_FAIL return NULL
 #define RETURN_MODULE(m) return m
@@ -2219,6 +2720,8 @@ static int is_method_installed(PyMethodDef* methods, size_t num_methods,
 #define RETURN_FAIL return
 #define RETURN_MODULE(m) return
 #endif
+
+
 
 #if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
 static PyModuleDef def;
@@ -2230,8 +2733,9 @@ static PyModuleDef def;
 PyMODINIT_FUNC MODNAME(void)
 {
     // now convert all funcs into PyMethodDef array
+    PyObject *obj_true;
+    PyObject *obj_false;
     PyObject *m;
-    PyMethodDef* methods;    
     int i;
     int fi;
     size_t num_methods;
@@ -2266,11 +2770,10 @@ PyMODINIT_FUNC MODNAME(void)
 	RETURN_FAIL;
     }
     
-    methods = malloc(sizeof(PyMethodDef)*(nif_entry->num_of_funcs+1));
-    memset(methods, 0, sizeof(PyMethodDef)*(nif_entry->num_of_funcs+1));
-    
     fi = 0;
     num_methods = 0;
+
+    memset(methods, 0, sizeof(PyMethodDef)*(nif_entry->num_of_funcs+1));
     
     for (i = 0; i < nif_entry->num_of_funcs; i++) {
 	const char* name = nif_entry->funcs[i].name;
@@ -2283,7 +2786,7 @@ PyMODINIT_FUNC MODNAME(void)
 	methods[j].ml_name = name;
 	methods[j].ml_meth = pynif_func[j];
 	methods[j].ml_flags =  METH_VARARGS;
-	methods[j].ml_doc = "PyNif function";
+	methods[j].ml_doc = NULL;
 
 	arity = nif_entry->funcs[i].arity;
 	// min_arity[j] = arity;
@@ -2307,15 +2810,15 @@ PyMODINIT_FUNC MODNAME(void)
 	    }
 	}
     }
+    
 
 #if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
     {
 	PyModuleDef_Init(&def);
 	def.m_name = STRINGIFY(PYNIFNAME);
-	def.m_doc  = "PyNif wrapper";
+	def.m_doc  = NULL;
 	def.m_size = -1;
 	def.m_methods = methods;
-
 	m = PyModule_Create(&def);
     }
 #else
@@ -2328,17 +2831,20 @@ PyMODINIT_FUNC MODNAME(void)
     nif_env.atoms = PyDict_New();
     nif_env.atom_table_size = INITIAL_ATOM_TABLE_SIZE;
     nif_env.atom_table = PyMem_Malloc(INITIAL_ATOM_TABLE_SIZE*sizeof(PyObject*));
-    PyModule_AddIntConstant(m, "false", 0);
-    PyDict_SetItemString(nif_env.atoms, "false", Py_False);
+
+    obj_false = Integer_FromLong(0);
+    PyModule_AddObject(m, "false", obj_false);
+    PyDict_SetItemString(nif_env.atoms, "false", obj_false);
     nif_env.atom_table[0] = Py_False;
-    
-    PyModule_AddIntConstant(m, "true", 1);
-    PyDict_SetItemString(nif_env.atoms, "true", Py_True);
+
+    obj_true = Integer_FromLong(1);
+    PyModule_AddObject(m, "true", obj_true);
+    PyDict_SetItemString(nif_env.atoms, "true", obj_true);
     nif_env.atom_table[1] = Py_True;
 
     nif_env.atom_index = 2;
     nif_env.autodispose_list = NULL;
-    
+
     nif_env.module = m;
     nif_env.self   = m;
 

@@ -10,7 +10,6 @@ PYTHON = python3
 
 PYTHON_INCLUDE = $(shell python3-config --includes)
 PYTHON_LDFLAGS = $(shell python3-config --ldflags)
-
 ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir()])" -s erlang halt)
 ERL_C_INCLUDE_DIR := "$(ERLDIR)/usr/include"
 
