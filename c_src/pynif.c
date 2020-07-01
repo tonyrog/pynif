@@ -28,8 +28,8 @@
 #define MAX_PYNIF_FUNCS 256
 
 #define UNUSED(var) (void)var
-#define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
-// #define DBG(fmt, ...)
+// #define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+#define DBG(fmt, ...)
 
 #ifdef Py_STRINGOBJECT_H
 
@@ -869,12 +869,6 @@ static void purge_autodispose_list(ErlNifEnv* env)
 {
     PyObject* list;
     if ((list = env->autodispose_list) != NULL) {
-	int i;
-	ssize_t n = PyList_Size(list);
-	for (i = 0; i < n; i++) {
-	    PyObject* item = PyList_GetItem(list, i);
-	    DBG("purge %p refcount=%ld\r\n", item, Py_REFCNT(item));
-	}
 	Py_DECREF(list);  // So that all objects are disposed
 	env->autodispose_list = NULL;
     }
@@ -1101,11 +1095,11 @@ int enif_map_iterator_get_pair(ErlNifEnv *env, ErlNifMapIterator *iter,
     i = -1;
     while (PyDict_Next(iter->dict, &pos, key, value)) {
 	i++;
-	fprintf(stderr, "get_pair %ld (pos=%ld) key=%p (", i, iter->pos, *key);
-	PyObject_Print(*key, stderr, Py_PRINT_RAW);
-	fprintf(stderr, ") value=%p (", *value);
-	PyObject_Print(*value, stderr, Py_PRINT_RAW);
-	fprintf(stderr, ")\r\n");
+	// DBG("get_pair %ld (pos=%ld) key=%p (", i, iter->pos, *key);
+	// PyObject_Print(*key, stderr, Py_PRINT_RAW);
+	// DBG(") value=%p (", *value);
+	// PyObject_Print(*value, stderr, Py_PRINT_RAW);
+	// DBG(stderr, ")\r\n");
 	if (i == iter->pos)
 	    return 1;
     }
@@ -1536,10 +1530,8 @@ ErlNifResourceType* enif_open_resource_type_x(
     ResourceType* rtp;
     UNUSED(env);  // FIXME store all reource types in environment?
 
-    fprintf(stderr, "PyType_Type.tp_basicsize = %ld\r\n",
-	    PyType_Type.tp_basicsize);
-    fprintf(stderr, "PyType_Type.tp_itemsize = %ld\r\n",
-	    PyType_Type.tp_itemsize);
+    DBG("PyType_Type.tp_basicsize = %ld\r\n", PyType_Type.tp_basicsize);
+    DBG("PyType_Type.tp_itemsize = %ld\r\n",  PyType_Type.tp_itemsize);
 
     rtp = PyMem_Malloc(sizeof(ResourceType));
     memcpy(rtp, &TemplateType, sizeof(TemplateType));
@@ -1551,13 +1543,12 @@ ErlNifResourceType* enif_open_resource_type_x(
     // store callbacks
     rtp->ini = *init;
 
-    fprintf(stderr, "rtp->tp_basicsize = %ld\r\n",
-	    rtp->tp.tp_basicsize);
-    fprintf(stderr, "rtp->tp_itemsize = %ld\r\n",
-	    rtp->tp.tp_itemsize);
+    DBG("rtp->tp_basicsize = %ld\r\n", rtp->tp.tp_basicsize);
+    DBG("rtp->tp_itemsize = %ld\r\n",  rtp->tp.tp_itemsize);
     
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
-	enif_fprintf(stderr, "PyType_Ready failed\n");
+	DBG("PyType_Ready failed\n");
+	return NULL;
     }
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
@@ -1638,7 +1629,7 @@ int enif_is_ref(ErlNifEnv* env, ERL_NIF_TERM term)
     return 1;
 }
 
-static char* format_ext_tag(int tag)
+char* pynif_format_ext_tag(int tag)
 {
     switch(tag) {
     case VERSION_MAGIC: return "MAGIC";
@@ -1900,7 +1891,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 {
     if (len < 1)
 	return 0;
-    DBG("decode_term: tag=%s\n", format_ext_tag(ptr[0]));
+    DBG("decode_term: tag=%s\n", pynif_format_ext_tag(ptr[0]));
     switch(ptr[0]) {
     case NIL_EXT:
 	if ((*term = PyList_New(0)) == NULL)
@@ -2560,8 +2551,6 @@ int enif_print(FILE* out, ERL_NIF_TERM term)
     ptr = format_term(term, buf, 10, 1);
     *ptr = '\0';
     return fprintf(out, "%s", buf);
-//    return PyObject_Print(term, out, Py_PRINT_RAW);
-//
 }
 
 //
@@ -2582,30 +2571,19 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 {
     PyObject** argv;
     int argc;
-    int a, i;
+    int i;
 
-    fprintf(stderr, "pynif_call func=%d: fun_start=%d, fun_end=%d ",
-	    j, fun_start[j], fun_end[j]); 
+    DBG("pynif_call func=%d: fun_start=%d, fun_end=%d ",
+	j, fun_start[j], fun_end[j]);
     
     if (!PyTuple_Check(args)) {
-	PyErr_SetString(PyExc_TypeError, "not a argument tuple");
+	PyErr_SetString(PyExc_TypeError, "args is not a argument");
 	return NULL;
     }
 
     argv = ((PyTupleObject*)args)->ob_item;
     argc = PyTuple_GET_SIZE(args);
 
-    for (a = 0; a < argc; a++) {
-	Py_INCREF(argv[a]);
-	fprintf(stderr, "argument %d:", a);
-	enif_print(stderr, argv[a]);
-	fprintf(stderr, "\n");
-    }
-
-    fprintf(stderr, "argument tuple: ");
-    enif_print(stderr, args);
-    fprintf(stderr, "\r\n");
-	
     nif_env.self = self;
 
     // FIXME: remove this loop!
@@ -2613,19 +2591,20 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 	if (nif_ari[i] == argc) {
 	    int k = nif_fun[i];
 	    PyObject* r;
-	    fprintf(stderr, "  NIF call %s/%d k=%d\r\n",
-		    nif_entry->funcs[k].name,
-		    nif_entry->funcs[k].arity,
-		    k);
+	    DBG(stderr, "  NIF call %s/%d k=%d\r\n",
+		nif_entry->funcs[k].name,
+		nif_entry->funcs[k].arity,
+		k);
 	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
-	    fprintf(stderr, "  NIF result: ");
-	    enif_print(stderr, r);
-	    fprintf(stderr, "\r\n");
-
-	    for (a = 0; a < argc; a++) {
-		Py_DECREF(argv[a]);
+	    DBG("NIF result: ");
+	    if (r != NULL) {
+		Py_INCREF(r);
+		// enif_print(stderr, r);
+		// fprintf(stderr, "\r\n");
 	    }
-	    
+	    else {
+		// fprintf(stderr, "returned badarg\r\n");
+	    }
 	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
 	    return r;
 	}
