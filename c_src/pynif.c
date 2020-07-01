@@ -2580,17 +2580,31 @@ static int nif_fun[MAX_PYNIF_FUNCS];
 
 static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 {
-    PyObject** argv = ((PyTupleObject *)(args))->ob_item;
-    int argc = PyTuple_Size(args);
-    int i;
+    PyObject** argv;
+    int argc;
+    int a, i;
 
     fprintf(stderr, "pynif_call func=%d: fun_start=%d, fun_end=%d ",
-	    j, fun_start[j], fun_end[j]);
-    for (i = 0; i < argc; i++) {
-	fprintf(stderr, "argument %d:", i);
-	enif_print(stderr, argv[i]);
+	    j, fun_start[j], fun_end[j]); 
+    
+    if (!PyTuple_Check(args)) {
+	PyErr_SetString(PyExc_TypeError, "not a argument tuple");
+	return NULL;
+    }
+
+    argv = ((PyTupleObject*)args)->ob_item;
+    argc = PyTuple_GET_SIZE(args);
+
+    for (a = 0; a < argc; a++) {
+	Py_INCREF(argv[a]);
+	fprintf(stderr, "argument %d:", a);
+	enif_print(stderr, argv[a]);
 	fprintf(stderr, "\n");
     }
+
+    fprintf(stderr, "argument tuple: ");
+    enif_print(stderr, args);
+    fprintf(stderr, "\r\n");
 	
     nif_env.self = self;
 
@@ -2607,6 +2621,11 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 	    fprintf(stderr, "  NIF result: ");
 	    enif_print(stderr, r);
 	    fprintf(stderr, "\r\n");
+
+	    for (a = 0; a < argc; a++) {
+		Py_DECREF(argv[a]);
+	    }
+	    
 	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
 	    return r;
 	}
