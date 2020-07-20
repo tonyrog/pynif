@@ -1082,7 +1082,7 @@ int enif_map_iterator_prev(ErlNifEnv *env, ErlNifMapIterator *iter)
 }
 
 // FIXME: this is n^2!
-// possibly allow for at least NEXT beeing efficent
+// possibly allow for at least NEXT beeing efficient
 int enif_map_iterator_get_pair(ErlNifEnv *env, ErlNifMapIterator *iter,
 			       ERL_NIF_TERM *key, ERL_NIF_TERM *value)
 {
@@ -1140,7 +1140,6 @@ void* enif_realloc(void* ptr, size_t size)
 {
     return PyMem_Realloc(ptr, size);
 }
-
 
 //
 // BINARY
