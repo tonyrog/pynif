@@ -4,13 +4,15 @@
 
 #include "pynif.h"
 
-#ifndef WIN32
+#if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
+#include <windows.h>
+#include <malloc.h>
+#else
 #include <stdarg.h>
 #include <stdint.h>
 #include <dlfcn.h>
-#else
-#include <windows.h>
 #endif
+
 #include <limits.h>
 #include <stddef.h>
 
@@ -28,8 +30,8 @@
 #define MAX_PYNIF_FUNCS 256
 
 #define UNUSED(var) (void)var
-// #define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
-#define DBG(fmt, ...)
+#define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+// #define DBG(fmt, ...)
 
 #ifdef Py_STRINGOBJECT_H
 
@@ -1546,7 +1548,7 @@ ErlNifResourceType* enif_open_resource_type_x(
     DBG("rtp->tp_itemsize = %ld\r\n",  rtp->tp.tp_itemsize);
     
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
-	DBG("PyType_Ready failed\n");
+	DBG("%sPyType_Ready failed\n", "");
 	return NULL;
     }
     if (flags & ERL_NIF_RT_CREATE)
@@ -2572,7 +2574,7 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
     int argc;
     int i;
 
-    DBG("pynif_call func=%d: fun_start=%d, fun_end=%d ",
+    DBG("pynif_call func=%d: fun_start=%d, fun_end=%d\r\n",
 	j, fun_start[j], fun_end[j]);
     
     if (!PyTuple_Check(args)) {
@@ -2590,19 +2592,21 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 	if (nif_ari[i] == argc) {
 	    int k = nif_fun[i];
 	    PyObject* r;
-	    DBG(stderr, "  NIF call %s/%d k=%d\r\n",
+	    DBG("  NIF call %s/%d k=%d\r\n",
 		nif_entry->funcs[k].name,
 		nif_entry->funcs[k].arity,
 		k);
 	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
-	    DBG("NIF result: ");
+	    DBG("%sNIF result:","");
 	    if (r != NULL) {
 		Py_INCREF(r);
-		// enif_print(stderr, r);
-		// fprintf(stderr, "\r\n");
+#ifdef DEBUG
+		enif_print(stderr, r);
+		fprintf(stderr, "\r\n");
+#endif
 	    }
 	    else {
-		// fprintf(stderr, "returned badarg\r\n");
+		DBG("%sreturned badarg\r\n", "");
 	    }
 	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
 	    return r;
@@ -2688,7 +2692,7 @@ pf248,pf249,pf250,pf251,pf252,pf253,pf254,pf255,
 };
 
 
-#ifdef WIN32
+#if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
 #define RTLD_LAZY 0
 typedef HMODULE dl_handle_t;
 void * dlsym(HMODULE Lib, const char *func) {
@@ -2701,16 +2705,6 @@ HMODULE dlopen(const CHAR *DLL, int unused) {
 #else
 typedef void * dl_handle_t;
 #endif
-
-void xnif_init()
-{
-    // called from for example varc_nif to initialize nif extensions that
-    // are used to glue erlang/python a bit better
-}
-
-// #ifndef PYNIFFILE
-// extern ErlNifEntry* nif_init(void);
-// #endif
 
 static int is_method_installed(PyMethodDef* methods, size_t num_methods,
 			       const char* name)
@@ -2742,7 +2736,31 @@ static PyModuleDef def;
 #define MODNAME CAT2(init,PYNIFNAME)
 #endif
 
-PyMODINIT_FUNC MODNAME(void)
+#if defined(__cplusplus)
+#  define MODEXTERN extern "C"
+#else
+#  define MODEXTERN
+#endif
+
+#if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
+#  define MODEXPORT MODEXTERN __declspec(dllexport)
+#else
+#  if defined(__GNUC__) && __GNUC__ >= 4
+#    define MODEXPORT MODEXTERN __attribute__ ((visibility("default")))
+#  elif defined (__SUNPRO_C) && (__SUNPRO_C >= 0x550)
+#    define MODEXPORT MODEXTERN __global
+#  else
+#    define MODEXPORT MODEXTERN
+#  endif
+#endif
+
+#if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
+#  define MODTYPE MODEXPORT PyObject*
+#else
+#  define MODTYPE MODEXPORT void
+#endif
+
+MODTYPE MODNAME(void)
 {
     // now convert all funcs into PyMethodDef array
     PyObject *obj_true;
@@ -2775,8 +2793,11 @@ PyMODINIT_FUNC MODNAME(void)
     
     nif_entry = nif_init();
 
+    DBG("nif ABI version %d.%d min_erts=%s\r\n",
+	nif_entry->major, nif_entry->minor, nif_entry->min_erts);
+
     if (nif_entry->num_of_funcs > MAX_PYNIF_FUNCS) {
-	fprintf(stderr, "sorry to many functions limit is %d \r\n",
+	fprintf(stderr, "sorry too many functions, limit is %d \r\n",
 		MAX_PYNIF_FUNCS);
 	fprintf(stderr, "  to fix update MAX_PYNIF_FUNS!\r\n");
 	RETURN_FAIL;
