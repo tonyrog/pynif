@@ -4,6 +4,7 @@
 
 #include "pynif.h"
 
+
 #if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
 #include <windows.h>
 #include <malloc.h>
@@ -32,6 +33,19 @@
 #define UNUSED(var) (void)var
 #define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
 // #define DBG(fmt, ...)
+
+#if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
+#define ALLOC_STACK(n)  _malloca((n))
+#define FREE_STACK(ptr) _freea((ptr))
+#else
+#define ALLOC_STACK(n) alloca((n))
+#define FREE_STACK(ptr)
+#endif
+
+#define STK_BEGIN(type,name,n) do { type* name = ALLOC_STACK(sizeof(type)*(n)); do {
+#define STK_LEAVE(name) goto L##name
+#define STK_END0(name) } while(0); FREE_STACK((name)); } while(0)    
+#define STK_END(name)  } while(0); L##name: FREE_STACK((name)); } while(0)
 
 #ifdef Py_STRINGOBJECT_H
 
@@ -102,7 +116,7 @@ static void autodispose(ErlNifEnv* env, PyObject* obj)
     if (list != NULL) {
 	PyList_Append(list, obj);  // Append add a REF
 	Py_DecRef(obj);
-	DBG("append %p to autodispose refcount=%ld\r\n", obj, Py_REFCNT(obj));
+	DBG("append %p to autodispose refcount=%zd\r\n", obj, Py_REFCNT(obj));
     }
 }
 
@@ -255,12 +269,13 @@ ERL_NIF_TERM enif_make_atom(ErlNifEnv* env, const char* name)
 
 ERL_NIF_TERM enif_make_atom_len(ErlNifEnv* env, const char* name, size_t len)
 {
-    ERL_NIF_TERM atom;
-    char name2[len+1];
-    memcpy(name2, name, len);
-    name2[len] = '\0';
-    make_atom(env, name2, 0, &atom);
-    return atom;
+    ERL_NIF_TERM r;
+    STK_BEGIN(char, name2, len+1) {
+	memcpy(name2, name, len);
+	name2[len] = '\0';
+	make_atom(env, name2, 0, &r);
+    } STK_END0(name2);
+    return r;
 }
 
 int enif_make_existing_atom(ErlNifEnv* env, const char* name, ERL_NIF_TERM* atom, ErlNifCharEncoding coding)
@@ -278,7 +293,7 @@ static int get_string(PyObject* string, char* buf, unsigned len,
     if (str_len < len) {
 	memcpy(buf, str, str_len);
 	buf[str_len] = '\0';
-	return str_len+1;
+	return (int)str_len+1;
     }
     return 0;
 }
@@ -1143,6 +1158,7 @@ void* enif_realloc(void* ptr, size_t size)
     return PyMem_Realloc(ptr, size);
 }
 
+
 //
 // BINARY
 //
@@ -1236,7 +1252,7 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	char* src = PyByteArray_AsString(term);
 	if (slen > dlen) return -1;
 	memcpy(dst, src, slen);
-	DBG("copied %ld bytes from bytearray\r\n", slen);
+	DBG("copied %zd bytes from bytearray\r\n", slen);
 	return slen;
     }
     else if (String_Check(term)) {
@@ -1244,7 +1260,7 @@ static ssize_t iolist_copy(ERL_NIF_TERM term, unsigned char* dst, ssize_t dlen)
 	char* src = String_AsString(term);
 	if (slen > dlen) return -1;
 	memcpy(dst, src, slen);
-	DBG("copied %ld bytes from string\r\n", slen);
+	DBG("copied %zd bytes from string\r\n", slen);
 	return slen;
     }
     else if (PyList_Check(term)) {
@@ -1531,8 +1547,8 @@ ErlNifResourceType* enif_open_resource_type_x(
     ResourceType* rtp;
     UNUSED(env);  // FIXME store all reource types in environment?
 
-    DBG("PyType_Type.tp_basicsize = %ld\r\n", PyType_Type.tp_basicsize);
-    DBG("PyType_Type.tp_itemsize = %ld\r\n",  PyType_Type.tp_itemsize);
+    DBG("PyType_Type.tp_basicsize = %zd\r\n", PyType_Type.tp_basicsize);
+    DBG("PyType_Type.tp_itemsize = %zd\r\n",  PyType_Type.tp_itemsize);
 
     rtp = PyMem_Malloc(sizeof(ResourceType));
     memcpy(rtp, &TemplateType, sizeof(TemplateType));
@@ -1544,8 +1560,8 @@ ErlNifResourceType* enif_open_resource_type_x(
     // store callbacks
     rtp->ini = *init;
 
-    DBG("rtp->tp_basicsize = %ld\r\n", rtp->tp.tp_basicsize);
-    DBG("rtp->tp_itemsize = %ld\r\n",  rtp->tp.tp_itemsize);
+    DBG("rtp->tp_basicsize = %zd\r\n", rtp->tp.tp_basicsize);
+    DBG("rtp->tp_itemsize = %zd\r\n",  rtp->tp.tp_itemsize);
     
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
 	DBG("%sPyType_Ready failed\n", "");
@@ -1754,7 +1770,7 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
 	value = Integer_AsLong(term);
 	if ((value >= 0) && (value <= 0xff))
 	    return 1+1;  // small_integer (uint8)
-	else if ((value >= -2147483648) && (value <= 2147483647))	
+	else if ((value >= -2147483648) && (value <= 2147483647))
 	    return 1+4;  // integer (int32)
 	else // encode as bignum
 	    return 1+1+1+4; // size,sign,byte*4
@@ -1938,14 +1954,20 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	return 5;
     case SMALL_BIG_EXT: { // t,n0,s,d0,d1,...dn-1
 	size_t blen;
+	size_t r;
 	if (len < 3) return 0;
 	blen = get_uint8(ptr+1);
 	if (len < 3+blen) return 0;
 	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[2]);
 	if (ptr[2]) { // sign, negate bytes
-	    unsigned char digits[blen+1];
-	    blen = negate_bytes(ptr+3, blen, digits);
-	    if ((*term = _PyLong_FromByteArray(digits, blen, 1, 1)) == NULL)
+	    STK_BEGIN(unsigned char, digits1, blen+1) {
+		blen = negate_bytes(ptr+3, blen, digits1);
+		if ((*term = _PyLong_FromByteArray(digits1,blen,1,1)) == NULL)
+		    r = 0;
+		else
+		    r = blen;
+	    } STK_END0(digits1);
+	    if (r == 0)
 		return 0;
 	}
 	else {
@@ -1956,16 +1978,22 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case LARGE_BIG_EXT: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
 	size_t blen;
+	size_t r;
 	if (len < 6) return 0;
 	blen = get_uint32(ptr+1);
 	if (len < 6+blen) return 0;
 	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[5]);
 	if (ptr[5]) { // sign, negate bytes
-	    unsigned char digits[blen+1];
-	    blen = negate_bytes(ptr+6, blen, digits);
-	    if ((*term = _PyLong_FromByteArray(digits, blen, 1, 1)) == NULL)
-		return 0;
-	}	
+	    STK_BEGIN(unsigned char, digits2, blen+1) {
+		blen = negate_bytes(ptr+6, blen, digits2);
+		if ((*term = _PyLong_FromByteArray(digits2,blen,1,1)) == NULL)
+		    r = 0;
+		else
+		    r = blen;
+	    } STK_END0(digits2);
+	    if (r == 0)
+		return 0;	    
+	}
 	else {
 	    if ((*term = _PyLong_FromByteArray(ptr+6, blen, 1, 0)) == NULL)
 		return 0;
@@ -2004,91 +2032,94 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case LIST_EXT: {
 	size_t n;
+	size_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: list length=%ld\n", (long)n);
-	{
+	STK_BEGIN(PyObject*, seq1, n) {
 	    PyObject* list;
-	    PyObject* seq[n];
 	    size_t slen;
 	    int i;
-	    
-	    if ((slen = decode_seq(ptr+5, len-5, seq, n)) == 0)
-		return 0;
+	    if ((slen = decode_seq(ptr+5, len-5, seq1, n)) == 0)
+		STK_LEAVE(seq1);
 	    if (len-5-slen < 1)
-		return 0;
+		STK_LEAVE(seq1);
 	    if (ptr[5+slen] != NIL_EXT)
-		return 0;
+		STK_LEAVE(seq1);
 	    if ((list = PyList_New(n)) == NULL)
-		return 0;
+		STK_LEAVE(seq1);
 	    for (i = 0; i < (int)n; i++)
-		PyList_SET_ITEM(list, i, seq[i]);
-	    *term = list;	    
-	    return 5+slen+1;
-	}
+		PyList_SET_ITEM(list, i, seq1[i]);
+	    *term = list;
+	    r = 5+slen+1;
+	} STK_END(seq1);
+	return r;
     }
     case SMALL_TUPLE_EXT: {
 	size_t n;
+	size_t r = 0;
 	if (len < 2) return 0;
 	n = get_uint8(ptr+1);
 	DBG("decode_term: tuple length=%ld\n", (long)n);
-	{
+	STK_BEGIN(PyObject*, seq2, n) {	
 	    PyObject* tuple;
-	    PyObject* seq[n];
 	    size_t slen;
 	    int i;
 	    
-	    if ((slen = decode_seq(ptr+2, len-2, seq, n)) == 0)
-		return 0;
+	    if ((slen = decode_seq(ptr+2, len-2, seq2, n)) == 0)
+		STK_LEAVE(seq2);
 	    if ((tuple = PyTuple_New(n)) == NULL)
-		return 0;
+		STK_LEAVE(seq2);
 	    for (i = 0; i < (int)n; i++)
-		PyTuple_SetItem(tuple, i, seq[i]);
+		PyTuple_SetItem(tuple, i, seq2[i]);
 	    *term = tuple;
-	    return 2+slen;
-	}
+	    r = 2+slen;
+	} STK_END(seq2);
+	return r;
     }
     case LARGE_TUPLE_EXT: {
 	size_t n;
+	size_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: tuple length=%ld\n",(long)n);
-	{
+	STK_BEGIN(PyObject*, seq3, n) {
 	    PyObject* tuple;
-	    PyObject* seq[n];
 	    size_t slen;
 	    int i;
 	    
-	    if ((slen = decode_seq(ptr+5, len-5, seq, n)) == 0)
-		return 0;
+	    if ((slen = decode_seq(ptr+5, len-5, seq3, n)) == 0)
+		STK_LEAVE(seq3);
 	    if ((tuple = PyTuple_New(n)) == NULL)
-		return 0;
+		STK_LEAVE(seq3);
 	    for (i = 0; i < (int)n; i++)
-		PyTuple_SetItem(tuple, i, seq[i]);
+		PyTuple_SetItem(tuple, i, seq3[i]);
 	    *term = tuple;
-	    return 2+slen;
-	}
+	    r = 2+slen;
+	} STK_END(seq3);
+	return r;
     }
     case MAP_EXT: {
 	size_t n;
+	size_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: map length=%ld\n",(long)n);
-	{
+	STK_BEGIN(PyObject*, seq4, 2*n) {
 	    PyObject* dict;
-	    PyObject* seq[2*n];
 	    size_t slen;
 	    int i;
 	    
-	    if ((slen = decode_seq(ptr+5, len-5, seq, 2*n)) == 0)
-		return 0;
+	    if ((slen = decode_seq(ptr+5, len-5, seq4, 2*n)) == 0)
+		STK_LEAVE(seq4);
 	    if ((dict = PyDict_New()) == NULL)
-		return 0;
+		STK_LEAVE(seq4);
 	    for (i = 0; i < (int)n; i += 2)
-		PyDict_SetItem(dict, seq[i], seq[i+1]);
+		PyDict_SetItem(dict, seq4[i], seq4[i+1]);
 	    *term = dict;
-	    return 5+slen;
-	}
+	    r = 5+slen;
+	} STK_END(seq4);
+	return r;
     }
     default:
 	return 0;
@@ -2534,7 +2565,7 @@ static char* format_term(ERL_NIF_TERM term, char* ptr, int base, int ref)
     if (ref) {
 	char buf[16];
 	int len;
-	sprintf(buf, "%ld", Py_REFCNT(term));
+	sprintf(buf, "%zd", Py_REFCNT(term));
 	len = strlen(buf);
 	*ptr++ = '/';
 	memcpy(ptr, buf, len);
@@ -2546,12 +2577,14 @@ static char* format_term(ERL_NIF_TERM term, char* ptr, int base, int ref)
 int enif_print(FILE* out, ERL_NIF_TERM term)
 {
     ssize_t len = format_term_size(term, 10, 1);
-    char buf[len+1];
-    char* ptr;
-    
-    ptr = format_term(term, buf, 10, 1);
-    *ptr = '\0';
-    return fprintf(out, "%s", buf);
+    int r;
+    STK_BEGIN(char, buf, len+1) {
+	char* ptr;
+	ptr = format_term(term, buf, 10, 1);
+	*ptr = '\0';
+	r = fprintf(out, "%s", buf);
+    } STK_END0(buf);
+    return r;
 }
 
 //
@@ -2574,7 +2607,7 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
     int argc;
     int i;
 
-    DBG("pynif_call func=%d: fun_start=%d, fun_end=%d\r\n",
+    DBG("pynif_call func=%d: fun_start=%d, fun_end=%d ",
 	j, fun_start[j], fun_end[j]);
     
     if (!PyTuple_Check(args)) {
@@ -2597,16 +2630,14 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 		nif_entry->funcs[k].arity,
 		k);
 	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
-	    DBG("%sNIF result:","");
+	    DBG("%sNIF result: ", "");
 	    if (r != NULL) {
 		Py_INCREF(r);
-#ifdef DEBUG
-		enif_print(stderr, r);
-		fprintf(stderr, "\r\n");
-#endif
+		// enif_print(stderr, r);
+		// fprintf(stderr, "\r\n");
 	    }
 	    else {
-		DBG("%sreturned badarg\r\n", "");
+		// fprintf(stderr, "returned badarg\r\n");
 	    }
 	    if (nif_env.autodispose_list) purge_autodispose_list(&nif_env);
 	    return r;
@@ -2727,8 +2758,6 @@ static PyMethodDef methods[MAX_PYNIF_FUNCS];
 #define RETURN_MODULE(m) return
 #endif
 
-
-
 #if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
 static PyModuleDef def;
 #define MODNAME CAT2(PyInit_,PYNIFNAME)
@@ -2803,7 +2832,7 @@ MODTYPE MODNAME(void)
 	nif_entry->major, nif_entry->minor, nif_entry->min_erts);
 
     if (nif_entry->num_of_funcs > MAX_PYNIF_FUNCS) {
-	fprintf(stderr, "sorry too many functions, limit is %d \r\n",
+	fprintf(stderr, "sorry to many functions limit is %d \r\n",
 		MAX_PYNIF_FUNCS);
 	fprintf(stderr, "  to fix update MAX_PYNIF_FUNS!\r\n");
 	RETURN_FAIL;
