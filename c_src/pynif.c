@@ -2760,6 +2760,12 @@ static PyModuleDef def;
 #  define MODTYPE MODEXPORT void
 #endif
 
+// function wrapper use when erlang code need special init (keep it)
+MODEXPORT void xnif_init(ErlNifEnv* env)
+{
+    UNUSED(env);
+}
+
 MODTYPE MODNAME(void)
 {
     // now convert all funcs into PyMethodDef array
