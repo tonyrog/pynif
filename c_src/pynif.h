@@ -14,6 +14,7 @@ typedef struct _erl_nif_rwlock ErlNifRWLock;
 typedef PyTypeObject ErlNifResourceType;
 
 typedef struct {
+    /* Internal, size less than real ErlNifMapIterator */
     PyObject* dict;
     Py_ssize_t pos;
 } ErlNifMapIterator;
@@ -126,10 +127,10 @@ typedef struct
 {
     size_t size;
     unsigned char* data;
+
+    /* Internals (avert your eyes) */
     PyObject* ref_bin;
     int mutable;
-    /* for future additions to be ABI compatible (same struct size) */
-    void* __spare__[2];
 } ErlNifBinary;
 
 typedef struct enif_func_t

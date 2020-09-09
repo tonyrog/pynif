@@ -31,8 +31,8 @@
 #define MAX_PYNIF_FUNCS 256
 
 #define UNUSED(var) (void)var
-#define DBG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
-// #define DBG(fmt, ...)
+//#define DBG(...) do { fprintf(stderr, __VA_ARGS__); fflush(stderr); } while(0)
+#define DBG(...)
 
 #if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
 #define ALLOC_STACK(n)  _malloca((n))
@@ -44,7 +44,7 @@
 
 #define STK_BEGIN(type,name,n) do { type* name = ALLOC_STACK(sizeof(type)*(n)); do {
 #define STK_LEAVE(name) goto L##name
-#define STK_END0(name) } while(0); FREE_STACK((name)); } while(0)    
+#define STK_END0(name) } while(0); FREE_STACK((name)); } while(0)
 #define STK_END(name)  } while(0); L##name: FREE_STACK((name)); } while(0)
 
 #ifdef Py_STRINGOBJECT_H
@@ -66,10 +66,19 @@ static inline const char* py_string_as_string_and_size(PyObject* obj,
 #define String_AsString(x) PyString_AsString((x))
 #define String_AsStringAndSize(x,lenp) py_string_as_string_and_size((x),(lenp))
 #else
+
+static inline Py_ssize_t py_string_size(PyObject* obj)
+{
+    Py_ssize_t size;
+    if (PyUnicode_AsUTF8AndSize(obj, &size) == NULL)
+	return -1;
+    return size;
+}
+
 #define String_Check(x) PyUnicode_Check((x))
 #define String_FromString(s) PyUnicode_FromString((s))
 #define String_FromStringAndSize(s,n) PyUnicode_FromStringAndSize((s),(n))
-#define String_Size(s) PyUnicode_GetLength((s))
+#define String_Size(s) py_string_size((s))
 #define String_Resize(x,len) PyUnicode_Resize(&(x),(len))
 #define String_AsString(x) ((char*)PyUnicode_AsUTF8((x)))
 #define String_AsStringAndSize(x,lenp) PyUnicode_AsUTF8AndSize((x),(lenp))
@@ -104,7 +113,7 @@ static PyObject* Integer_FromUnsignedLong(unsigned long u)
     return PyInt_FromSize_t((size_t)u);
 #else
     return PyLong_FromUnsignedLong(u);
-#endif    
+#endif
 }
 
 // Put and object on the to autodispose list
@@ -123,7 +132,7 @@ static void autodispose(ErlNifEnv* env, PyObject* obj)
 int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
 {
     UNUSED(env);
-#ifdef Py_INTOBJECT_H    
+#ifdef Py_INTOBJECT_H
     if (PyInt_Check(term)) {
 	*ip = PyInt_AsLong(term);
 	return 1;
@@ -132,7 +141,7 @@ int enif_get_long(ErlNifEnv* env, ERL_NIF_TERM term, long* ip)
     if (PyLong_Check(term)) {
 	*ip = PyLong_AsLong(term);
 	return 1;
-    } 
+    }
     return 0;
 }
 
@@ -169,7 +178,7 @@ ERL_NIF_TERM enif_make_int(ErlNifEnv* env, int i)
 
 ERL_NIF_TERM enif_make_long(ErlNifEnv* env, long i)
 {
-    UNUSED(env);    
+    UNUSED(env);
     return Integer_FromLong(i);
 }
 
@@ -195,6 +204,22 @@ ERL_NIF_TERM enif_make_uint(ErlNifEnv* env, unsigned i)
     return Integer_FromUnsignedLong((unsigned long) i);
 }
 
+int enif_get_uint64(ErlNifEnv* env, ERL_NIF_TERM term, uint64_t* ip)
+{
+    unsigned long value;
+    if (!enif_get_ulong(env, term, &value))
+	return 0;
+    // range check!
+    *ip = value;
+    return 1;
+}
+
+ERL_NIF_TERM enif_make_uint64(ErlNifEnv* env, uint64_t i)
+{
+    UNUSED(env);
+    return Integer_FromUnsignedLong((unsigned long) i);
+}
+
 //
 // FLOAT
 //
@@ -211,7 +236,7 @@ int enif_get_double(ErlNifEnv* env, ERL_NIF_TERM term, double* dp)
 
 ERL_NIF_TERM enif_make_double(ErlNifEnv* env, double d)
 {
-    UNUSED(env);    
+    UNUSED(env);
     return PyFloat_FromDouble(d);
 }
 
@@ -239,7 +264,7 @@ static int  make_atom(ErlNifEnv* env, const char* name, int existing,
     if ((atm = PyDict_GetItemString(env->atoms, name)) == NULL) {
 	PyObject* obj;
 	if (existing) return 0;
-	    
+
 	if (env->atom_index >= env->atom_table_size) {
 	    size_t new_size = env->atom_table_size+EXPAND_ATOM_TABLE_SIZE;
 	    PyObject** tab = PyMem_Realloc(env->atom_table,
@@ -300,30 +325,22 @@ static int get_string(PyObject* string, char* buf, unsigned len,
 
 int enif_is_boolean(ErlNifEnv* env, ERL_NIF_TERM term)
 {
-    if (PyBool_Check(term))
-	return 1;
-    else if (Integer_Check(term)) {
-	long i = Integer_AsLong(term);
-	if ((i == 0) || (i == 1))
-	    return 1;
-    }
-    return 0;
+    return PyBool_Check(term);
 }
 
 int enif_is_true(ErlNifEnv* env, ERL_NIF_TERM term)
 {
-    if (term == Py_True) return 1;
-    else if (Integer_Check(term) && (Integer_AsLong(term) == 1))
-	return 1;
-    return 0;
+    return (term == Py_True);
 }
 
 int enif_is_false(ErlNifEnv* env, ERL_NIF_TERM term)
 {
-    if (term == Py_False) return 1;
-    else if (Integer_Check(term) && (Integer_AsLong(term) == 0))
-	return 1;
-    return 0;
+    return (term == Py_False);
+}
+
+int enif_is_undefined(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    return (term == Py_None);
 }
 
 int enif_get_boolean(ErlNifEnv* env, ERL_NIF_TERM term, int* value)
@@ -337,19 +354,22 @@ int enif_get_boolean(ErlNifEnv* env, ERL_NIF_TERM term, int* value)
 	    return 0;
 	return 1;
     }
-    else if (Integer_Check(term)) {
-	long i = Integer_AsLong(term);
-	if ((i == 0) || (i == 1)) {
-	    *value = i;
-	    return 1;
-	}
-    }
     return 0;
 }
 
 ERL_NIF_TERM enif_make_boolean(ErlNifEnv* env, int value)
 {
     return value ? Py_True : Py_False;
+}
+
+ERL_NIF_TERM enif_make_undefined(ErlNifEnv* env)
+{
+    return Py_None;
+}
+
+ERL_NIF_TERM enif_make_ok(ErlNifEnv* env)
+{
+    return Py_None;
 }
 
 int enif_get_atom(ErlNifEnv* env, ERL_NIF_TERM atom, char* buf, unsigned len,
@@ -436,10 +456,10 @@ int enif_get_atom_length(ErlNifEnv* env, ERL_NIF_TERM atom, unsigned* len,
 	*len = str_len;
 	return 1;
     }
-    return 0;    
+    return 0;
 }
 
-// 
+//
 // STRING
 //
 
@@ -487,7 +507,7 @@ int enif_get_string(ErlNifEnv* env, ERL_NIF_TERM list, char* buf, unsigned len, 
     return 0;
 }
 
-// 
+//
 // ERROR
 //
 ERL_NIF_TERM enif_make_badarg(ErlNifEnv* env)
@@ -498,7 +518,7 @@ ERL_NIF_TERM enif_make_badarg(ErlNifEnv* env)
 }
 
 //
-// TUPLE 
+// TUPLE
 //
 
 int enif_is_tuple(ErlNifEnv* env, ERL_NIF_TERM term)
@@ -523,7 +543,7 @@ int enif_get_tuple(ErlNifEnv* env, ERL_NIF_TERM tpl, int* arity,
 ERL_NIF_TERM enif_make_tuple_from_array(ErlNifEnv* env,
 					const ERL_NIF_TERM arr[], unsigned cnt)
 {
-    UNUSED(env);    
+    UNUSED(env);
     ERL_NIF_TERM tuple = PyTuple_New(cnt);
     unsigned i;
 
@@ -534,10 +554,10 @@ ERL_NIF_TERM enif_make_tuple_from_array(ErlNifEnv* env,
     }
     return tuple;
 }
-    
+
 ERL_NIF_TERM enif_make_tuple(ErlNifEnv* env, unsigned cnt, ...)
 {
-    UNUSED(env);    
+    UNUSED(env);
     va_list ap;
     ERL_NIF_TERM tuple = PyTuple_New(cnt);
     unsigned i = 0;
@@ -549,10 +569,10 @@ ERL_NIF_TERM enif_make_tuple(ErlNifEnv* env, unsigned cnt, ...)
 	PyTuple_SET_ITEM(tuple, i, elem);
 	i++;
     }
-    va_end(ap);    
+    va_end(ap);
     return tuple;
 }
-    
+
 
 ERL_NIF_TERM enif_make_tuple1(ErlNifEnv* env,
 			      ERL_NIF_TERM e1)
@@ -675,7 +695,7 @@ int enif_get_list_length(ErlNifEnv* env, ERL_NIF_TERM term, unsigned* len)
 
 int enif_is_empty_list(ErlNifEnv* env, ERL_NIF_TERM term)
 {
-    UNUSED(env);  
+    UNUSED(env);
     if (!PyList_Check(term))
 	return 0;
     return PyList_Size(term) == 0;
@@ -705,13 +725,13 @@ ERL_NIF_TERM enif_make_list_from_array(ErlNifEnv* env,
     UNUSED(env);
     ERL_NIF_TERM list = PyList_New(cnt);
     unsigned i;
-    
+
     for (i = 0; i < cnt; i++) {
 	ERL_NIF_TERM elem = arr[i];
 	Py_INCREF(elem);
 	PyList_SET_ITEM(list, i, elem);
     }
-    return list;    
+    return list;
 }
 
 ERL_NIF_TERM enif_make_list1(ErlNifEnv* env,
@@ -927,7 +947,7 @@ int enif_monitor_process(ErlNifEnv* env, void* obj, const ErlNifPid* pid,
     UNUSED(env);
     UNUSED(obj);
     UNUSED(pid);
-    UNUSED(monitor);  
+    UNUSED(monitor);
     return 0;
 }
 
@@ -998,7 +1018,7 @@ int enif_make_map_put(ErlNifEnv* env, ERL_NIF_TERM map_in,
 int enif_get_map_value(ErlNifEnv* env, ERL_NIF_TERM map,
 		       ERL_NIF_TERM key, ERL_NIF_TERM* value)
 {
-    UNUSED(env);    
+    UNUSED(env);
     if (!PyDict_Check(map))
 	return 0;
     if ((*value = PyDict_GetItem(map, key)) != NULL)
@@ -1008,7 +1028,7 @@ int enif_get_map_value(ErlNifEnv* env, ERL_NIF_TERM map,
 
 int enif_make_map_update(ErlNifEnv* env, ERL_NIF_TERM map_in, ERL_NIF_TERM key, ERL_NIF_TERM value, ERL_NIF_TERM* map_out)
 {
-    PyObject* mp;    
+    PyObject* mp;
     UNUSED(env);
     if (!PyDict_Check(map_in))
 	return 0;
@@ -1315,7 +1335,7 @@ int enif_inspect_iolist_as_binary(ErlNifEnv* env, ERL_NIF_TERM term,
 	bin->data = (unsigned char*) PyByteArray_AsString(term);
 	bin->ref_bin = term;
 	bin->mutable = 0;
-	return 1;	
+	return 1;
     }
     else {
 	ssize_t size;
@@ -1384,7 +1404,7 @@ ErlNifRWLock* enif_rwlock_create(char *name)
 
 void enif_rwlock_destroy(ErlNifRWLock *rwlck)
 {
-    PyThread_free_lock((PyThread_type_lock)rwlck);    
+    PyThread_free_lock((PyThread_type_lock)rwlck);
 }
 
 int enif_rwlock_tryrlock(ErlNifRWLock *rwlck)
@@ -1404,18 +1424,18 @@ void enif_rwlock_runlock(ErlNifRWLock *rwlck)
 
 int enif_rwlock_tryrwlock(ErlNifRWLock *rwlck)
 {
-    return PyThread_acquire_lock((PyThread_type_lock)rwlck, NOWAIT_LOCK);    
+    return PyThread_acquire_lock((PyThread_type_lock)rwlck, NOWAIT_LOCK);
 }
 
 void enif_rwlock_rwlock(ErlNifRWLock *rwlck)
 {
-    (void) PyThread_acquire_lock((PyThread_type_lock)rwlck, WAIT_LOCK);    
+    (void) PyThread_acquire_lock((PyThread_type_lock)rwlck, WAIT_LOCK);
 }
 
 void enif_rwlock_rwunlock(ErlNifRWLock *rwlck)
 {
     PyThread_release_lock((PyThread_type_lock)rwlck);
-}    
+}
 
 int enif_tsd_key_create(char *name, ErlNifTSDKey *key)
 {
@@ -1435,13 +1455,13 @@ int enif_tsd_key_create(char *name, ErlNifTSDKey *key)
 
 void enif_tsd_key_destroy(ErlNifTSDKey key)
 {
-#ifdef USE_TSS_KEY    
+#ifdef USE_TSS_KEY
     PyThread_tss_delete(&key);
 #else
     PyThread_delete_key(key);
 #endif
 }
-    
+
 void enif_tsd_set(ErlNifTSDKey key, void *data)
 {
 #ifdef USE_TSS_KEY
@@ -1450,7 +1470,7 @@ void enif_tsd_set(ErlNifTSDKey key, void *data)
     (void) PyThread_set_key_value(key, data);
 #endif
 }
-    
+
 void* enif_tsd_get(ErlNifTSDKey key)
 {
 #ifdef USE_TSS_KEY
@@ -1465,7 +1485,7 @@ int enif_snprintf(char* str, size_t size, const char *format, ...)
 {
     va_list ap;
     int r;
-    
+
     va_start(ap, format);
     r = vsnprintf(str, size, format, ap);
     va_end(ap);
@@ -1480,7 +1500,7 @@ int enif_fprintf(FILE* filep, const char *format, ...)
 {
     va_list ap;
     int r;
-    
+
     va_start(ap, format);
     r = vfprintf(filep, format, ap);
     va_end(ap);
@@ -1547,6 +1567,10 @@ ErlNifResourceType* enif_open_resource_type_x(
     ResourceType* rtp;
     UNUSED(env);  // FIXME store all reource types in environment?
 
+    // printf("stderr = %p\r\n", stderr);
+
+    DBG("enif_open_resource_type_x called\r\n");
+
     DBG("PyType_Type.tp_basicsize = %zd\r\n", PyType_Type.tp_basicsize);
     DBG("PyType_Type.tp_itemsize = %zd\r\n",  PyType_Type.tp_itemsize);
 
@@ -1562,16 +1586,16 @@ ErlNifResourceType* enif_open_resource_type_x(
 
     DBG("rtp->tp_basicsize = %zd\r\n", rtp->tp.tp_basicsize);
     DBG("rtp->tp_itemsize = %zd\r\n",  rtp->tp.tp_itemsize);
-    
+
     if (PyType_Ready((PyTypeObject*) rtp) < 0) {
-	DBG("%sPyType_Ready failed\n", "");
+	DBG("PyType_Ready failed\n");
 	return NULL;
     }
     if (flags & ERL_NIF_RT_CREATE)
 	*tried = ERL_NIF_RT_CREATE;
 
     Py_INCREF((PyObject*) rtp);
-    
+
     return (ErlNifResourceType*)rtp;
 }
 
@@ -1613,7 +1637,7 @@ ERL_NIF_TERM enif_make_resource(ErlNifEnv* env, void* obj)
     Py_INCREF((PyObject*) ptr);
     return (PyObject*) ptr;
 }
-    
+
 int enif_get_resource(ErlNifEnv* env, ERL_NIF_TERM term,
 		      ErlNifResourceType* type, void** objp)
 {
@@ -1787,16 +1811,20 @@ static ssize_t bytesize_of_term(ERL_NIF_TERM term)
     }
     else if (PyList_Check(term)) {
 	ssize_t len = PyList_Size(term);
-	ssize_t size = 1+4 + 1;  // and the terminating NIL
-	int i;
-	for (i = 0; i < (int)len; i++) {
-	    ssize_t size1;
-	    if ((size1 = bytesize_of_term(PyList_GetItem(term, i))) < 0)
-		return -1;
-	    size += size1;
+	if (len == 0) // encode as NIL!
+	    return 1;
+	else {
+	    ssize_t size = 1+4 + 1;  // and the terminating NIL
+	    int i;
+	    for (i = 0; i < (int)len; i++) {
+		ssize_t size1;
+		if ((size1 = bytesize_of_term(PyList_GetItem(term, i))) < 0)
+		    return -1;
+		size += size1;
+	    }
+	    return size;
 	}
-	return size;
-    }    
+    }
     else if (PyTuple_Check(term)) {
 	ssize_t len = PyTuple_Size(term);
 	size_t size;
@@ -1875,17 +1903,17 @@ static size_t negate_bytes(unsigned char* y, size_t yl, unsigned char* r)
     return rl;
 }
 
-static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term);
+static ssize_t decode_term(unsigned char* ptr, size_t len, PyObject** term);
 
-static size_t decode_seq(unsigned char* ptr, size_t len,
-			 PyObject** seq, size_t seqlen)
+static ssize_t decode_seq(unsigned char* ptr, size_t len,
+			  PyObject** seq, size_t seqlen)
 {
     int i;
-    size_t blen = 0;
+    ssize_t blen = 0;
     for (i = 0; i < (int)seqlen; i++) {
-	size_t ilen;
-	if ((ilen = decode_term(ptr, len, &seq[i])) == 0)
-	    return 0;
+	ssize_t ilen;
+	if ((ilen = decode_term(ptr, len, &seq[i])) < 0)
+	    return -1;
 	blen += ilen;
 	ptr += ilen;
 	len -= ilen;
@@ -1904,15 +1932,15 @@ static size_t decode_atom(unsigned char* ptr, size_t len, PyObject** term)
     return len;
 }
 
-static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
+static ssize_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 {
     if (len < 1)
-	return 0;
+	return -1;
     DBG("decode_term: tag=%s\n", pynif_format_ext_tag(ptr[0]));
     switch(ptr[0]) {
     case NIL_EXT:
 	if ((*term = PyList_New(0)) == NULL)
-	    return 0;
+	    return -1;
 	return 1;
     case SMALL_ATOM_EXT: {
 	size_t blen;
@@ -1920,44 +1948,44 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	blen = get_uint8(ptr+1);
 	if (len < 2+blen) return 0;
 	if (decode_atom(ptr+2, blen, term) != blen)
-	    return 0;
+	    return -1;
 	return 2+blen;
     }
     case ATOM_EXT: {
 	size_t blen;
-	if (len < 3) return 0;
+	if (len < 3) return -1;
 	blen = get_uint16(ptr+1);
-	if (len < 3+blen) return 0;
+	if (len < 3+blen) return -1;
 	if (decode_atom(ptr+3, blen, term) != blen)
-	    return 0;
+	    return -1;
 	return 3+blen;
     }
     case BINARY_EXT: {
 	size_t blen;
-	if (len < 5) return 0;
+	if (len < 5) return -1;
 	blen = get_uint32(ptr+1);
-	if (len < 5+blen) return 0;
+	if (len < 5+blen) return -1;
 	DBG("decode_term: binary size=%ld\n", (long)blen);
 	if ((*term = PyByteArray_FromStringAndSize((const char*)ptr+5, blen)) == NULL)
-	    return 0;
+	    return -1;
 	return 5+blen;
     }
     case SMALL_INTEGER_EXT:
 	if (len < 2) return 0;
 	if ((*term = Integer_FromLong(get_uint8(ptr+1))) == NULL)
-	    return 0;
+	    return -1;
 	return 2;
     case INTEGER_EXT:
-	if (len < 5) return 0;
+	if (len < 5) return -1;
 	if ((*term = Integer_FromLong(get_int32(ptr+1))) == NULL)
-	    return 0;
+	    return -1;
 	return 5;
     case SMALL_BIG_EXT: { // t,n0,s,d0,d1,...dn-1
 	size_t blen;
 	size_t r;
 	if (len < 3) return 0;
 	blen = get_uint8(ptr+1);
-	if (len < 3+blen) return 0;
+	if (len < 3+blen) return -1;
 	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[2]);
 	if (ptr[2]) { // sign, negate bytes
 	    STK_BEGIN(unsigned char, digits1, blen+1) {
@@ -1968,20 +1996,20 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 		    r = blen;
 	    } STK_END0(digits1);
 	    if (r == 0)
-		return 0;
+		return -1;
 	}
 	else {
 	    if ((*term = _PyLong_FromByteArray(ptr+3, blen, 1, 0)) == NULL)
-		return 0;
+		return -1;
 	}
 	return 3+blen;
     }
     case LARGE_BIG_EXT: {  // t,n3,n2,n1,n0,s,d0,d1,...dn-1
 	size_t blen;
 	size_t r;
-	if (len < 6) return 0;
+	if (len < 6) return -1;
 	blen = get_uint32(ptr+1);
-	if (len < 6+blen) return 0;
+	if (len < 6+blen) return -1;
 	DBG("decode_term: #digits=%ld, sign=%d\n", (long)blen, ptr[5]);
 	if (ptr[5]) { // sign, negate bytes
 	    STK_BEGIN(unsigned char, digits2, blen+1) {
@@ -1992,55 +2020,56 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 		    r = blen;
 	    } STK_END0(digits2);
 	    if (r == 0)
-		return 0;	    
+		return -1;
 	}
 	else {
 	    if ((*term = _PyLong_FromByteArray(ptr+6, blen, 1, 0)) == NULL)
-		return 0;
+		return -1;
 	}
 	return 6+blen;
     }
     case FLOAT_EXT: {  // t,string(31)
 	PyObject* string = String_FromStringAndSize((const char*)ptr+1, 31);
 	if ((*term = Float_FromString(string)) == NULL)
-	    return 0;
+	    return -1;
 	return 32;
     }
     case NEW_FLOAT_EXT: { // t,f7,f6,f5,f4,f3,f2,f1,f0
 	double d;
-	if (len < 9) return 0;
+	if (len < 9) return -1;
 	d = _PyFloat_Unpack8(ptr+1, 0);
 	if ((*term = PyFloat_FromDouble(d)) == NULL)
-	    return 0;
+	    return -1;
 	return 1+8;
     }
     case REFERENCE_EXT:
-	return 0; // FIXME
+	return -1; // FIXME
     case NEW_REFERENCE_EXT:
-	return 0; // FIXME
+	return -1; // FIXME
     case NEWER_REFERENCE_EXT:
-	return 0; // FIXME
+	return -1; // FIXME
     case STRING_EXT: {
 	size_t blen;
-	if (len < 3) return 0;
+	if (len < 3) return -1;
 	blen = get_uint16(ptr+1);
 	if (len < 3+blen) return 0;
 	DBG("decode_term: string length=%ld\n", (long)blen);
 	if ((*term = String_FromStringAndSize((const char*)ptr+3, blen)) == NULL)
-	    return 0;
+	    return -1;
 	return 3+blen;
     }
     case LIST_EXT: {
 	size_t n;
-	size_t r = 0;
+	ssize_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: list length=%ld\n", (long)n);
 	STK_BEGIN(PyObject*, seq1, n) {
 	    PyObject* list;
-	    size_t slen;
+	    ssize_t slen;
 	    int i;
-	    if ((slen = decode_seq(ptr+5, len-5, seq1, n)) == 0)
+
+	    if ((slen = decode_seq(ptr+5, len-5, seq1, n)) < 0)
 		STK_LEAVE(seq1);
 	    if (len-5-slen < 1)
 		STK_LEAVE(seq1);
@@ -2057,16 +2086,16 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case SMALL_TUPLE_EXT: {
 	size_t n;
-	size_t r = 0;
+	ssize_t r = 0;
 	if (len < 2) return 0;
 	n = get_uint8(ptr+1);
 	DBG("decode_term: tuple length=%ld\n", (long)n);
-	STK_BEGIN(PyObject*, seq2, n) {	
+	STK_BEGIN(PyObject*, seq2, n) {
 	    PyObject* tuple;
-	    size_t slen;
+	    ssize_t slen;
 	    int i;
-	    
-	    if ((slen = decode_seq(ptr+2, len-2, seq2, n)) == 0)
+
+	    if ((slen = decode_seq(ptr+2, len-2, seq2, n)) < 0)
 		STK_LEAVE(seq2);
 	    if ((tuple = PyTuple_New(n)) == NULL)
 		STK_LEAVE(seq2);
@@ -2079,16 +2108,16 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case LARGE_TUPLE_EXT: {
 	size_t n;
-	size_t r = 0;
+	ssize_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: tuple length=%ld\n",(long)n);
 	STK_BEGIN(PyObject*, seq3, n) {
 	    PyObject* tuple;
-	    size_t slen;
+	    ssize_t slen;
 	    int i;
-	    
-	    if ((slen = decode_seq(ptr+5, len-5, seq3, n)) == 0)
+
+	    if ((slen = decode_seq(ptr+5, len-5, seq3, n)) < 0)
 		STK_LEAVE(seq3);
 	    if ((tuple = PyTuple_New(n)) == NULL)
 		STK_LEAVE(seq3);
@@ -2101,16 +2130,17 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
     }
     case MAP_EXT: {
 	size_t n;
-	size_t r = 0;
+	ssize_t r = 0;
 	if (len < 5) return 0;
 	n = get_uint32(ptr+1);
 	DBG("decode_term: map length=%ld\n",(long)n);
-	STK_BEGIN(PyObject*, seq4, 2*n) {
+	n = 2*n;
+	STK_BEGIN(PyObject*, seq4, n) {
 	    PyObject* dict;
-	    size_t slen;
+	    ssize_t slen;
 	    int i;
-	    
-	    if ((slen = decode_seq(ptr+5, len-5, seq4, 2*n)) == 0)
+
+	    if ((slen = decode_seq(ptr+5, len-5, seq4, n)) < 0)
 		STK_LEAVE(seq4);
 	    if ((dict = PyDict_New()) == NULL)
 		STK_LEAVE(seq4);
@@ -2122,7 +2152,7 @@ static size_t decode_term(unsigned char* ptr, size_t len, PyObject** term)
 	return r;
     }
     default:
-	return 0;
+	return -1;
     }
 }
 
@@ -2229,7 +2259,7 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	_PyFloat_Pack8(PyFloat_AsDouble(term), ptr+1, 0);
 	return 1+8;  // NEW_FLOAT
     }
-    else if (String_Check(term)) {
+    else if (String_Check(term)) { // fixme: utf8 only!
 	const char* str;
 	Py_ssize_t len;
 	if ((str = String_AsStringAndSize(term, &len)) == NULL)
@@ -2259,24 +2289,29 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
     }
     else if (PyList_Check(term)) {
 	ssize_t len = PyList_Size(term);
-	ssize_t bsize = 1+4+1;  // and the terminating NIL
-	int i;
-	if (size < 6) return -1;
-	DBG("encode_term: LIST length=%ld\n", (long)len);
-	ptr[0] = LIST_EXT;
-	put_uint32(ptr+1, len);
-	ptr += 5;
-	size -= 5;
-	for (i = 0; i < (int)len; i++) {
-	    ssize_t size1;
-	    if ((size1 = encode_term(PyList_GetItem(term, i),ptr,size))<=0)
-		return -1;
-	    ptr += size1;
-	    size -= size1;
-	    bsize += size1;
+	ssize_t bsize = 0;
+	if (len > 0) {
+	    int i;
+	    if (size < 6) return -1;
+	    DBG("encode_term: LIST length=%ld\n", (long)len);
+	    bsize = 1+4;  // size of tag+length
+	    ptr[0] = LIST_EXT;
+	    put_uint32(ptr+1, len);
+	    ptr += 5;
+	    size -= 5;
+	    for (i = 0; i < (int)len; i++) {
+		ssize_t size1;
+		if ((size1 = encode_term(PyList_GetItem(term, i),ptr,size))<=0)
+		    return -1;
+		ptr += size1;
+		size -= size1;
+		bsize += size1;
+	    }
 	}
+	// and the terminating NIL
+	if (size < 0) return -1;
 	*ptr = NIL_EXT;
-	return bsize;
+	return bsize+1;
     }
     else if (PyTuple_Check(term)) {
 	ssize_t len = PyTuple_Size(term);
@@ -2323,8 +2358,8 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 	ptr[0] = MAP_EXT;
 	put_uint32(ptr+1, len);
 	ptr += 5;
-	size -= 5;	
-	
+	size -= 5;
+
 	while(PyDict_Next(term, &pos, &key, &value)) {
 	    ssize_t size1;
 	    if ((size1=encode_term(key,ptr,size))<=0)
@@ -2336,13 +2371,13 @@ ssize_t encode_term(PyObject* term, unsigned char* ptr, ssize_t size)
 		return -1;
 	    ptr += size1;
 	    size -= size1;
-	    bsize += size1;	    
+	    bsize += size1;
 	}
 	return bsize;
     }
     return -1;
 }
-    
+
 int enif_term_to_binary(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin)
 {
     ssize_t size;
@@ -2364,11 +2399,11 @@ size_t enif_binary_to_term(ErlNifEnv *env, const unsigned char* data,
 			   size_t sz, ERL_NIF_TERM *term, unsigned int opts)
 {
     unsigned char* ptr = (unsigned char*) data;
-    size_t size;
+    ssize_t size;
     UNUSED(env);
     if (ptr[0] != VERSION_MAGIC)
 	return 0;
-    if ((size = decode_term(ptr+1, sz-1, term)) == 0)
+    if ((size = decode_term(ptr+1, sz-1, term)) <= 0)
 	return 0;
     DBG("binary_to_term: size=%ld\n", (long)size);
     return size+1;
@@ -2380,7 +2415,7 @@ char* format_long(long value, int base, char* buf, size_t size)
     char* ptr = buf + size;
     int sign = (value < 0);
     static char* digit = "0123456789ABCDEF";
-    
+
     if (value < 0)
 	value = -value;
     *--ptr = '\0';
@@ -2417,7 +2452,7 @@ static ssize_t format_term_size(ERL_NIF_TERM term, int base, int ref)
     else if (Integer_Check(term)) {
 	if (PyLong_Check(term)) {
 	    PyObject* string = _PyLong_Format(term, base);
-	    size += String_Size(string); 
+	    size += String_Size(string);
 	}
 	else {
 	    char buf[16];
@@ -2552,7 +2587,7 @@ static char* format_term(ERL_NIF_TERM term, char* ptr, int base, int ref)
 	    *ptr++ = ',';
 	}
 	if (len) ptr--;
-	*ptr++ = '}';	
+	*ptr++ = '}';
     }
     else {
 	char buf[16];
@@ -2609,7 +2644,7 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 
     DBG("pynif_call func=%d: fun_start=%d, fun_end=%d ",
 	j, fun_start[j], fun_end[j]);
-    
+
     if (!PyTuple_Check(args)) {
 	PyErr_SetString(PyExc_TypeError, "args is not a argument");
 	return NULL;
@@ -2630,7 +2665,7 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 		nif_entry->funcs[k].arity,
 		k);
 	    r = (*nif_entry->funcs[k].fptr)(&nif_env, argc, argv);
-	    DBG("%sNIF result: ", "");
+	    DBG("NIF result: ");
 	    if (r != NULL) {
 		Py_INCREF(r);
 		// enif_print(stderr, r);
@@ -2652,37 +2687,37 @@ static PyObject* pynif_call(PyObject* self, PyObject* args, int j)
 #define PF(i) static PyObject* CAT2(pf,i)(PyObject* self, PyObject* args) { return pynif_call(self, args, (i)); }
 
 // must be a way? ... max 256 right now
-PF(0) PF(1) PF(2) PF(3) PF(4) PF(5) PF(6) PF(7) 
-PF(8) PF(9) PF(10) PF(11) PF(12) PF(13) PF(14) PF(15) 
-PF(16) PF(17) PF(18) PF(19) PF(20) PF(21) PF(22) PF(23) 
-PF(24) PF(25) PF(26) PF(27) PF(28) PF(29) PF(30) PF(31) 
-PF(32) PF(33) PF(34) PF(35) PF(36) PF(37) PF(38) PF(39) 
-PF(40) PF(41) PF(42) PF(43) PF(44) PF(45) PF(46) PF(47) 
-PF(48) PF(49) PF(50) PF(51) PF(52) PF(53) PF(54) PF(55) 
-PF(56) PF(57) PF(58) PF(59) PF(60) PF(61) PF(62) PF(63) 
-PF(64) PF(65) PF(66) PF(67) PF(68) PF(69) PF(70) PF(71) 
-PF(72) PF(73) PF(74) PF(75) PF(76) PF(77) PF(78) PF(79) 
-PF(80) PF(81) PF(82) PF(83) PF(84) PF(85) PF(86) PF(87) 
-PF(88) PF(89) PF(90) PF(91) PF(92) PF(93) PF(94) PF(95) 
-PF(96) PF(97) PF(98) PF(99) PF(100) PF(101) PF(102) PF(103) 
-PF(104) PF(105) PF(106) PF(107) PF(108) PF(109) PF(110) PF(111) 
-PF(112) PF(113) PF(114) PF(115) PF(116) PF(117) PF(118) PF(119) 
-PF(120) PF(121) PF(122) PF(123) PF(124) PF(125) PF(126) PF(127) 
-PF(128) PF(129) PF(130) PF(131) PF(132) PF(133) PF(134) PF(135) 
-PF(136) PF(137) PF(138) PF(139) PF(140) PF(141) PF(142) PF(143) 
-PF(144) PF(145) PF(146) PF(147) PF(148) PF(149) PF(150) PF(151) 
-PF(152) PF(153) PF(154) PF(155) PF(156) PF(157) PF(158) PF(159) 
-PF(160) PF(161) PF(162) PF(163) PF(164) PF(165) PF(166) PF(167) 
-PF(168) PF(169) PF(170) PF(171) PF(172) PF(173) PF(174) PF(175) 
-PF(176) PF(177) PF(178) PF(179) PF(180) PF(181) PF(182) PF(183) 
-PF(184) PF(185) PF(186) PF(187) PF(188) PF(189) PF(190) PF(191) 
-PF(192) PF(193) PF(194) PF(195) PF(196) PF(197) PF(198) PF(199) 
-PF(200) PF(201) PF(202) PF(203) PF(204) PF(205) PF(206) PF(207) 
-PF(208) PF(209) PF(210) PF(211) PF(212) PF(213) PF(214) PF(215) 
-PF(216) PF(217) PF(218) PF(219) PF(220) PF(221) PF(222) PF(223) 
-PF(224) PF(225) PF(226) PF(227) PF(228) PF(229) PF(230) PF(231) 
-PF(232) PF(233) PF(234) PF(235) PF(236) PF(237) PF(238) PF(239) 
-PF(240) PF(241) PF(242) PF(243) PF(244) PF(245) PF(246) PF(247) 
+PF(0) PF(1) PF(2) PF(3) PF(4) PF(5) PF(6) PF(7)
+PF(8) PF(9) PF(10) PF(11) PF(12) PF(13) PF(14) PF(15)
+PF(16) PF(17) PF(18) PF(19) PF(20) PF(21) PF(22) PF(23)
+PF(24) PF(25) PF(26) PF(27) PF(28) PF(29) PF(30) PF(31)
+PF(32) PF(33) PF(34) PF(35) PF(36) PF(37) PF(38) PF(39)
+PF(40) PF(41) PF(42) PF(43) PF(44) PF(45) PF(46) PF(47)
+PF(48) PF(49) PF(50) PF(51) PF(52) PF(53) PF(54) PF(55)
+PF(56) PF(57) PF(58) PF(59) PF(60) PF(61) PF(62) PF(63)
+PF(64) PF(65) PF(66) PF(67) PF(68) PF(69) PF(70) PF(71)
+PF(72) PF(73) PF(74) PF(75) PF(76) PF(77) PF(78) PF(79)
+PF(80) PF(81) PF(82) PF(83) PF(84) PF(85) PF(86) PF(87)
+PF(88) PF(89) PF(90) PF(91) PF(92) PF(93) PF(94) PF(95)
+PF(96) PF(97) PF(98) PF(99) PF(100) PF(101) PF(102) PF(103)
+PF(104) PF(105) PF(106) PF(107) PF(108) PF(109) PF(110) PF(111)
+PF(112) PF(113) PF(114) PF(115) PF(116) PF(117) PF(118) PF(119)
+PF(120) PF(121) PF(122) PF(123) PF(124) PF(125) PF(126) PF(127)
+PF(128) PF(129) PF(130) PF(131) PF(132) PF(133) PF(134) PF(135)
+PF(136) PF(137) PF(138) PF(139) PF(140) PF(141) PF(142) PF(143)
+PF(144) PF(145) PF(146) PF(147) PF(148) PF(149) PF(150) PF(151)
+PF(152) PF(153) PF(154) PF(155) PF(156) PF(157) PF(158) PF(159)
+PF(160) PF(161) PF(162) PF(163) PF(164) PF(165) PF(166) PF(167)
+PF(168) PF(169) PF(170) PF(171) PF(172) PF(173) PF(174) PF(175)
+PF(176) PF(177) PF(178) PF(179) PF(180) PF(181) PF(182) PF(183)
+PF(184) PF(185) PF(186) PF(187) PF(188) PF(189) PF(190) PF(191)
+PF(192) PF(193) PF(194) PF(195) PF(196) PF(197) PF(198) PF(199)
+PF(200) PF(201) PF(202) PF(203) PF(204) PF(205) PF(206) PF(207)
+PF(208) PF(209) PF(210) PF(211) PF(212) PF(213) PF(214) PF(215)
+PF(216) PF(217) PF(218) PF(219) PF(220) PF(221) PF(222) PF(223)
+PF(224) PF(225) PF(226) PF(227) PF(228) PF(229) PF(230) PF(231)
+PF(232) PF(233) PF(234) PF(235) PF(236) PF(237) PF(238) PF(239)
+PF(240) PF(241) PF(242) PF(243) PF(244) PF(245) PF(246) PF(247)
 PF(248) PF(249) PF(250) PF(251) PF(252) PF(253) PF(254) PF(255)
 
 
@@ -2804,7 +2839,7 @@ MODTYPE MODNAME(void)
     int i;
     int fi;
     size_t num_methods;
-    
+
 #ifdef PYNIFFILE
     ErlNifEntry* (*nif_init)(void);
 #else
@@ -2825,11 +2860,13 @@ MODTYPE MODNAME(void)
 	nif_init = (ErlNifEntry* (*)(void)) dlsym(handle,"nif_init");
     }
 #endif
-    
+
     nif_entry = nif_init();
 
-    DBG("nif ABI version %d.%d min_erts=%s\r\n",
-	nif_entry->major, nif_entry->minor, nif_entry->min_erts);
+    DBG("nif %s, ABI version %d.%d min_erts=%s\r\n",
+	nif_entry->name, nif_entry->major, nif_entry->minor,
+	nif_entry->min_erts);
+    DBG("nif num_of_funcs=%d\r\n", nif_entry->num_of_funcs);
 
     if (nif_entry->num_of_funcs > MAX_PYNIF_FUNCS) {
 	fprintf(stderr, "sorry to many functions limit is %d \r\n",
@@ -2837,17 +2874,17 @@ MODTYPE MODNAME(void)
 	fprintf(stderr, "  to fix update MAX_PYNIF_FUNS!\r\n");
 	RETURN_FAIL;
     }
-    
+
     fi = 0;
     num_methods = 0;
 
     memset(methods, 0, sizeof(PyMethodDef)*(nif_entry->num_of_funcs+1));
-    
+
     for (i = 0; i < nif_entry->num_of_funcs; i++) {
 	const char* name = nif_entry->funcs[i].name;
 	int arity;
 	int j, k;
-	
+
 	if (is_method_installed(methods, num_methods, name))
 	    continue;
 	j = num_methods++;
@@ -2864,6 +2901,7 @@ MODTYPE MODNAME(void)
 	nif_fun[fi] = i;
 	fi++;
 	fun_end[j] = fi;
+	DBG("install function %s/%d\r\n", name, arity);
 
 	// install all function with same name
 	for (k = i+1; k < nif_entry->num_of_funcs; k++) {
@@ -2875,10 +2913,10 @@ MODTYPE MODNAME(void)
 		nif_fun[fi]  = k;
 		fi++;
 		fun_end[j] = fi;
+		DBG("install function %s/%d\r\n", name, arity);
 	    }
 	}
     }
-    
 
 #if (PY_MAJOR_VERSION > 3) || ((PY_MAJOR_VERSION==3) && (PY_MINOR_VERSION>=0))
     {
@@ -2894,6 +2932,8 @@ MODTYPE MODNAME(void)
 	m = Py_InitModule(STRINGIFY(PYNIFNAME), methods);
     }
 #endif
+    DBG("module created\r\n");
+
     memset(&nif_env, 0, sizeof(ErlNifEnv));
 
     nif_env.atoms = PyDict_New();
@@ -2916,11 +2956,16 @@ MODTYPE MODNAME(void)
     nif_env.module = m;
     nif_env.self   = m;
 
+
     if (nif_entry->load != NULL) {
 	ERL_NIF_TERM load_info = enif_make_int(&nif_env, 0);
-	int r = nif_entry->load(&nif_env, &nif_env.priv_data, load_info);
-	if (r < 0)
+	DBG("calling load, addr=%p\r\n", nif_entry->load);
+	int r = (*nif_entry->load)(&nif_env, &nif_env.priv_data, load_info);
+	if (r < 0) {
+	    DBG("load failed\r\n");
 	    RETURN_FAIL;
+	}
     }
+    DBG("load done\r\n");
     RETURN_MODULE(m);
 }
